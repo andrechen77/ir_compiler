@@ -9,8 +9,18 @@
 #include <optional>
 #include <algorithm>
 
-namespace L3::program {
+namespace IR::program {
     using namespace std_alias;
+
+	enum class Type {
+		Int64,
+		Code,
+		Tuple,
+		Void
+	};
+	std::pair<Type, int64_t> str_to_type(const std::string& str);
+	std::string typeToString(Type type);
+	int64_t get_num_dimensions(const std::string& str);
 
     class Expr {
         virtual std::string to_string() const = 0;
@@ -28,6 +38,20 @@ namespace L3::program {
 			referent_nullable { nullptr }
 		{}
         virtual std::string to_string() const override;
+		Opt<Item *> get_referent() const {
+			if (this->referent_nullable) {
+				return this->referent_nullable;
+			} else {
+				return {};
+			}
+		}
+		const std::string &get_ref_name() const {
+			if (this->referent_nullable) {
+				return this->referent_nullable->get_name();
+			} else {
+				return this->free_name;
+			}
+		}
     };
 
     class NumberLiteral : public Expr {
@@ -36,6 +60,7 @@ namespace L3::program {
         public: 
         
         NumberLiteral(int64_t value) : value { value } {}
+		int64_t get_value() const { return this->value; }
         virtual std::string to_string() const override {return std::to_string(this->value);};
     };
 
@@ -52,6 +77,9 @@ namespace L3::program {
 		lshift,
 		rshift
 	};
+	Operator str_to_op(std::string str);
+	std::string to_string(Operator op);
+	Opt<Operator> flip_operator(Operator op);
 
     class BinaryOperation : public Expr {
         Uptr<Expr> lhs;
@@ -86,12 +114,20 @@ namespace L3::program {
 
     class Variable {
         std::string name;
+		Type t;
+		int64_t num_dimensions;
 
         public:
 
-        Variable(std::string name) : name { mv(name) } {}
+        Variable(std::string name, Type t, int64_t num_dimensions) : 
+			name { mv(name) },
+			t {t},
+			num_dimensions {num_dimensions}
+		{}
         const std::string &get_name() const { return this->name; }
-        std::string to_string() const;
+        Type &get_type() const { return this->t; }
+		int64_t &get_num_dimensions { return this->num_dimensions; }
+		std::string to_string() const;
     };
 
     class Instruction {
@@ -105,8 +141,18 @@ namespace L3::program {
 
         public:
 
+		virtual void bind_to_scope(AggregateScope &agg_scope) = 0;
         virtual std::string to_string() const = 0;
     };
+
+	class TerminatorBranchOne {
+		Uptr<ItemRef<BasicBlock>> bb_ref;
+
+		public:
+		TerminatorBranchOne(Uptr<ItemRef<BasicBlock>> &&bb_ref): bb_ref { mv(bb_ref) }{}
+		virtual void bind_to_scope(AggregateScope &agg_scope) = 0;
+        virtual std::string to_string() const = 0;
+	};
 
     class BasicBlock {
         std::string name;
@@ -128,6 +174,21 @@ namespace L3::program {
         std::string get_name() const { return this->name; }
         Vec<Uptr<Instruction>> &get_inst() { return this->inst; }
         Uptr<Terminator> &get_terminator() { return this->te; }
+		void bind_to_scope(AggregateScope &agg_scope);
+
+		class Builder {
+			std::string name;
+			Vec<Uptr<Instruction>> inst;
+        	Uptr<Terminator> te;
+
+			public:
+
+			Builder(): {}
+			Uptr<BasicBlock> &get_result();
+			void add_name(std::string name);
+			void add_instruction(Uptr<Instruction> &&inst);
+			void add_terminator(Uptr<Terminator> &&te);
+		};
     };
 
     template<typename Item>
@@ -226,6 +287,15 @@ namespace L3::program {
 		}
     };
 
+	struct AggregateScope {
+		Scope<Variable> variable_scope;
+		Scope<BasicBlock> label_scope;
+		Scope<IRFunction> ir_function_scope;
+		Scope<ExternalFunction> external_function_scope;
+
+		void set_parent(AggregateScope &parent);
+	};
+
     class Function {
         public:
         virtual const std::string &get_name() const = 0;
@@ -237,6 +307,7 @@ namespace L3::program {
         Vec<Uptr<BasicBlock>> blocks;
         Vec<Uptr<Variable>> vars;
         Vec<Variable *> parameter_vars;
+		AggregateScope agg_scope;
 
         public:
 
@@ -244,20 +315,37 @@ namespace L3::program {
 			std::string name,
 			Vec<Uptr<BasicBlock>> &&blocks,
 			Vec<Uptr<Variable>> &&vars,
-			Vec<Variable *> parameter_vars
+			Vec<Variable *> parameter_vars,
+			AggregateScope &agg_scope
 		) :
 			name { mv(name) },
 			blocks { mv(blocks) },
 			vars { mv(vars) },
-			parameter_vars { mv(parameter_vars) }
+			parameter_vars { mv(parameter_vars) },
+			agg_scope {mv(agg_scope)}
 		{}
-
-        public:
-
         virtual const std::string &get_name() const override { return this->name; }
         Vec<Uptr<BasicBlock>> &get_blocks() { return this->blocks; }
         const Vec<Variable *> &get_parameter_vars() const { return this->parameter_vars; }
-        virtual std::string to_string() const override;
+        AggregateScope &get_scope() { return this->agg_scope; }
+		virtual std::string to_string() const override;
+
+		class Builder {
+			std::string name;
+			Vec<BasicBlock> basic_blocks;
+			Vec<Uptr<Variable>> vars;
+			Vec<Variable *> parameter_vars;
+			AggregateScope agg_scope;
+
+			public:
+
+			Builder(){}
+			Uptr<IRFunction> get_result();
+			AggregateScope &get_scope(){return this->agg_scope; }
+			void add_name(std::string name);
+			void add_block(Uptr<BasicBlock> &&bb);
+			void add_parameter(std::string type, std::string name);
+		};
     };
 
     class ExternalFunction : public Function {
@@ -291,6 +379,17 @@ namespace L3::program {
 
         std::string to_string() const;
         Vec<Uptr<IRFunction>> &get_IR_functions() { return this->IR_functions; }
-
+		
+		class Builder {
+			Vec<Uptr<IRFunction>> IR_functions;
+			Vec<Uptr<ExternalFunction>> external_functions;
+			AggregateScope agg_scope;
+			
+			public:
+			Builder();
+			Vec<Uptr<IRFunction>> &get_ir_functions() { return this->IR_functions; }
+			void add_ir_function(Uptr<IRFunction> &&function);
+			Uptr<Program> get_result();
+		};
     };
 }

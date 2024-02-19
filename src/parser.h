@@ -2,6 +2,7 @@
 
 #include "std_alias.h"
 #include <memory>
+#include <typeinfo>
 #include <optional>
 
 namespace IR::parser {

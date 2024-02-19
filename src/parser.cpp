@@ -1,19 +1,9 @@
 #include "std_alias.h"
 #include "parser.h"
-#include <typeinfo>
-#include <sched.h>
-#include <string>
-#include <vector>
-#include <utility>
-#include <algorithm>
-#include <set>
-#include <iterator>
-#include <cstring>
-#include <cctype>
-#include <cstdlib>
-#include <stdint.h>
-#include <assert.h>
+#include "program.h"
 #include <fstream>
+#include <assert.h>
+#include <string_view>
 
 #include <tao/pegtl.hpp>
 #include <tao/pegtl/contrib/analyze.hpp>
@@ -167,12 +157,19 @@ namespace IR::parser {
 			>>
 		{};
 
+		struct DefineArgRule :
+			interleaved<
+				SpacesRule,
+				TypeRule,
+				VariableRule
+			>
+		{};
+
 		struct DefineArgsRule :
 			star<
 				interleaved<
 					SpacesRule,
-					TypeRule,
-					VariableRule,
+					DefineArgRule,
 					opt<one<','>>
 				>,
 				SpacesRule
@@ -463,6 +460,8 @@ namespace IR::parser {
 				NumberRule,
 				OperatorRule,
 				ArgsRule,
+				DefineArgRule,
+				TypeRule,
 				DefineArgsRule,
 				StdFunctionNameRule,
 				InstructionTypeDeclaratioRule,
@@ -545,6 +544,90 @@ namespace IR::parser {
 			return static_cast<bool>(this->rule);
 		}
 	};
+	
+	namespace node_processor{
+		using namespace IR::program;
+
+		std::string convert_name_rule(const ParseNode &n) {
+			assert(*n.rule == typeid(rules::NameRule));
+			return std::string(n.string_view());
+		}
+
+		Uptr<Instruction> convert_instruction(const ParseNode &n){
+
+		}
+
+		Uptr<Terminator> convert_instruction_branch_uncond_rule(const ParseNode &n) {
+			assert(*n.rule == typeid(rules::InstructionBranchUncondRule));
+			return mkuptr<InstructionBranch>(
+				make_basic_block_ref(n[0])
+			);
+		}
+		Uptr<Terminator> convert_terminator(const ParseNode &n){
+			const std::type_info &rule = *n.rule;
+			if (rule == typeid(rules::TerminatorBranchOneRule)) {
+
+			} else if (rule == typeid(rules::TerminatorBranchTwoRule)) {
+
+			} else if (rule == typeid(rules::TerminatorReturnVoidRule)) {
+
+			} else if (rule == typeid(rules::TerminatorReturnVarRule)) {
+
+			} else {
+				std::cerr << "Not a valid terminator: " << std::string(n.string_view()) << std::endl;
+				exit(-1);
+			}
+		}
+
+		Uptr<BasicBlock> convert_basic_block(const ParseNode& n, AggregateScope &parent_scope){
+			assert(*n.rule == typeid(rules::BasicBlockRule));
+			BasicBlock::Builder b_builder(parent_scope);
+
+			b_builder.add_name(convert_name_rule(n[0][0]));
+			b_builder.add_terminator(convert_terminator(n[0]));
+			const ParseNode& inst_nodes = n[1];
+			assert(*inst_nodes.rule == typeid(rules::InstructionsRule));
+			for (const Uptr<ParseNode> &inst : inst_nodes.children) {
+				b_builder.add_instruction(convert_instruction((*inst)[0]));
+			}
+
+			return b_builder.get_result();
+		}
+
+		Uptr<IRFunction> convert_ir_function(const ParseNode& n) {
+			assert(*n.rule == typeid(rules::FunctionRule));
+			IRFunction::Builder f_builder;
+
+			// add function name
+			f_builder.add_name(std::string(convert_name_rule(n[0][0])));
+
+			// add function parameters
+			const ParseNode &def_args = n[1];
+			assert(*def_args.rule == typeid(rules::DefineArgsRule));
+			for (const Uptr<ParseNode> &def_arg : def_args.children) {
+				f_builder.add_parameter(
+					std::string((*def_arg)[0].string_view()),
+					convert_name_rule((*def_arg)[1])
+				);
+			}
+
+			// add BasicBlocks
+			const ParseNode &basic_blocks = n[2];
+			assert(*basic_blocks.rule == typeid(rules::BasicBlocksRule));
+			for (const Uptr<ParseNode> &bb : basic_blocks.children) {
+				f_builder.add_block(convert_basic_block(*bb, f_builder.get_scope()));
+			}
+		}
+		
+		Uptr<Program> convert_program(const ParseNode &n) {
+			assert(*n.rule == typeid(rules::ProgramRule));
+			Program::Builder p_builder;
+			for (const Uptr<ParseNode> &child : n.children) {
+				auto function = convert_ir_function(*child);
+				p_builder.add_ir_function(mv(function));
+			}
+		}
+	}
 
     void parse_input(char *fileName, Opt<std::string> parse_tree_output) {
         using EntryPointRule = pegtl::must<rules::ProgramRule>;
@@ -566,6 +649,8 @@ namespace IR::parser {
 			}
 		}
 		std::cout << "done with parse" << std::endl;
+
+
 		return;
     }
 }
