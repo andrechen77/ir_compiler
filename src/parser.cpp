@@ -15,9 +15,9 @@ namespace pegtl = TAO_PEGTL_NAMESPACE;
 
 namespace IR::parser {
 
-    namespace rules {
-        using namespace pegtl;
-        template<typename Result, typename Separator, typename...Rules>
+	namespace rules {
+		using namespace pegtl;
+		template<typename Result, typename Separator, typename...Rules>
 		struct interleaved_impl;
 		template<typename... Results, typename Separator, typename Rule0, typename... RulesRest>
 		struct interleaved_impl<seq<Results...>, Separator, Rule0, RulesRest...> :
@@ -30,14 +30,14 @@ namespace IR::parser {
 		template<typename Separator, typename... Rules>
 		using interleaved = typename interleaved_impl<seq<>, Separator, Rules...>::type;
 
-        struct CommentRule :
+		struct CommentRule :
 			disable<
 				TAO_PEGTL_STRING("//"),
 				until<eolf>
 			>
 		{};
 
-        struct SpaceRule :
+		struct SpaceRule :
 			sor<one<' '>, one<'\t'>>
 		{};
 
@@ -45,7 +45,7 @@ namespace IR::parser {
 			star<SpaceRule>
 		{};
 
-        struct LineSeparatorsRule :
+		struct LineSeparatorsRule :
 			star<seq<SpacesRule, eol>>
 		{};
 
@@ -106,7 +106,7 @@ namespace IR::parser {
 		{};
 
 		struct ArrowRule : TAO_PEGTL_STRING("\x3c-") {};
-        
+		
 		struct InexplicableURule :
 			sor<
 				VariableRule,
@@ -140,7 +140,7 @@ namespace IR::parser {
 				TAO_PEGTL_STRING("tuple"),
 				TAO_PEGTL_STRING("code")
 			>
-    	{};
+		{};
 
 		struct VoidableTypeRule :
 			sor<
@@ -483,8 +483,8 @@ namespace IR::parser {
 			>
 		> {};
 	}
-    
-    struct ParseNode {
+	
+	struct ParseNode {
 		// members
 		Vec<Uptr<ParseNode>> children;
 		pegtl::internal::inputerator begin;
@@ -629,13 +629,13 @@ namespace IR::parser {
 		}
 	}
 
-    void parse_input(char *fileName, Opt<std::string> parse_tree_output) {
-        using EntryPointRule = pegtl::must<rules::ProgramRule>;
-        if (pegtl::analyze<EntryPointRule>() != 0) {
+	void parse_input(char *fileName, Opt<std::string> parse_tree_output) {
+		using EntryPointRule = pegtl::must<rules::ProgramRule>;
+		if (pegtl::analyze<EntryPointRule>() != 0) {
 			std::cerr << "There are problems with the grammar" << std::endl;
 			exit(1);
 		}
-        pegtl::file_input<> fileInput(fileName);
+		pegtl::file_input<> fileInput(fileName);
 		auto root = pegtl::parse_tree::parse<EntryPointRule, ParseNode, rules::Selector>(fileInput);
 		if (!root) {
 			std::cerr << "ERROR: Parser failed" << std::endl;
@@ -652,5 +652,5 @@ namespace IR::parser {
 
 
 		return;
-    }
+	}
 }

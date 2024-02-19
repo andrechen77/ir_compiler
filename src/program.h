@@ -10,7 +10,7 @@
 #include <algorithm>
 
 namespace IR::program {
-    using namespace std_alias;
+	using namespace std_alias;
 
 	enum class Type {
 		Int64,
@@ -22,12 +22,14 @@ namespace IR::program {
 	std::string typeToString(Type type);
 	int64_t get_num_dimensions(const std::string& str);
 
-    class Expr {
-        virtual std::string to_string() const = 0;
-    };
+	class Expr {
+		public: 
 
-    template<typename Item>
-    class ItemRef : public Expr {
+		virtual std::string to_string() const = 0;
+	};
+
+	template<typename Item>
+	class ItemRef : public Expr {
 		std::string free_name;
 		Item *referent_nullable;
 
@@ -37,7 +39,7 @@ namespace IR::program {
 			free_name { mv(free_name) },
 			referent_nullable { nullptr }
 		{}
-        virtual std::string to_string() const override;
+		virtual std::string to_string() const override;
 		Opt<Item *> get_referent() const {
 			if (this->referent_nullable) {
 				return this->referent_nullable;
@@ -52,19 +54,19 @@ namespace IR::program {
 				return this->free_name;
 			}
 		}
-    };
+	};
 
-    class NumberLiteral : public Expr {
+	class NumberLiteral : public Expr {
 		int64_t value;
 
-        public: 
-        
-        NumberLiteral(int64_t value) : value { value } {}
+		public: 
+		
+		NumberLiteral(int64_t value) : value { value } {}
 		int64_t get_value() const { return this->value; }
-        virtual std::string to_string() const override {return std::to_string(this->value);};
-    };
+		virtual std::string to_string() const override {return std::to_string(this->value);};
+	};
 
-    enum struct Operator {
+	enum struct Operator {
 		lt,
 		le,
 		eq,
@@ -81,25 +83,25 @@ namespace IR::program {
 	std::string to_string(Operator op);
 	Opt<Operator> flip_operator(Operator op);
 
-    class BinaryOperation : public Expr {
-        Uptr<Expr> lhs;
+	class BinaryOperation : public Expr {
+		Uptr<Expr> lhs;
 		Uptr<Expr> rhs;
 		Operator op;
 
-        public:
+		public:
 
-        BinaryOperation(Uptr<Expr> &&lhs, Uptr<Expr> &&rhs, Operator op) :
+		BinaryOperation(Uptr<Expr> &&lhs, Uptr<Expr> &&rhs, Operator op) :
 			lhs { mv(lhs) },
 			rhs { mv(rhs) },
 			op { op }
 		{}
-        virtual std::string to_string() const override;
-        Uptr<Expr> &get_lhs() { return this->lhs; }
-        Uptr<Expr> &get_rhs() { return this->rhs; }
-        Operator get_operator() {return this->op; }
-    };
+		virtual std::string to_string() const override;
+		Uptr<Expr> &get_lhs() { return this->lhs; }
+		Uptr<Expr> &get_rhs() { return this->rhs; }
+		Operator get_operator() {return this->op; }
+	};
 
-    class FunctionCall : public Expr {
+	class FunctionCall : public Expr {
 		Uptr<Expr> callee;
 		Vec<Uptr<Expr>> arguments;
 
@@ -112,38 +114,38 @@ namespace IR::program {
 		virtual std::string to_string() const override;
 	};
 
-    class Variable {
-        std::string name;
+	class Variable {
+		std::string name;
 		Type t;
 		int64_t num_dimensions;
 
-        public:
+		public:
 
-        Variable(std::string name, Type t, int64_t num_dimensions) : 
+		Variable(std::string name, Type t, int64_t num_dimensions) : 
 			name { mv(name) },
 			t {t},
 			num_dimensions {num_dimensions}
 		{}
-        const std::string &get_name() const { return this->name; }
-        Type &get_type() const { return this->t; }
+		const std::string &get_name() const { return this->name; }
+		Type &get_type() const { return this->t; }
 		int64_t &get_num_dimensions { return this->num_dimensions; }
 		std::string to_string() const;
-    };
+	};
 
-    class Instruction {
-        
-        public:
-        
-        virtual std::string to_string() const = 0;
-    };
-    
-    class Terminator {
+	class Instruction {
+		
+		public:
+		
+		virtual std::string to_string() const = 0;
+	};
+	
+	class Terminator {
 
-        public:
+		public:
 
 		virtual void bind_to_scope(AggregateScope &agg_scope) = 0;
-        virtual std::string to_string() const = 0;
-    };
+		virtual std::string to_string() const = 0;
+	};
 
 	class TerminatorBranchOne {
 		Uptr<ItemRef<BasicBlock>> bb_ref;
@@ -151,17 +153,17 @@ namespace IR::program {
 		public:
 		TerminatorBranchOne(Uptr<ItemRef<BasicBlock>> &&bb_ref): bb_ref { mv(bb_ref) }{}
 		virtual void bind_to_scope(AggregateScope &agg_scope) = 0;
-        virtual std::string to_string() const = 0;
+		virtual std::string to_string() const = 0;
 	};
 
-    class BasicBlock {
-        std::string name;
-        Vec<Uptr<Instruction>> inst;
-        Uptr<Terminator> te;
+	class BasicBlock {
+		std::string name;
+		Vec<Uptr<Instruction>> inst;
+		Uptr<Terminator> te;
 
-        public:
+		public:
 
-        BasicBlock(
+		BasicBlock(
 			std::string name,
 			Vec<Uptr<Instruction>> &&inst,
 			Uptr<Terminator> &&te
@@ -170,16 +172,16 @@ namespace IR::program {
 			inst { mv(inst) },
 			te { mv(te) }
 		{}
-        std::string to_string() const;
-        std::string get_name() const { return this->name; }
-        Vec<Uptr<Instruction>> &get_inst() { return this->inst; }
-        Uptr<Terminator> &get_terminator() { return this->te; }
+		std::string to_string() const;
+		std::string get_name() const { return this->name; }
+		Vec<Uptr<Instruction>> &get_inst() { return this->inst; }
+		Uptr<Terminator> &get_terminator() { return this->te; }
 		void bind_to_scope(AggregateScope &agg_scope);
 
 		class Builder {
 			std::string name;
 			Vec<Uptr<Instruction>> inst;
-        	Uptr<Terminator> te;
+			Uptr<Terminator> te;
 
 			public:
 
@@ -189,19 +191,19 @@ namespace IR::program {
 			void add_instruction(Uptr<Instruction> &&inst);
 			void add_terminator(Uptr<Terminator> &&te);
 		};
-    };
+	};
 
-    template<typename Item>
-    class Scope {
-        Opt<Scope *> parent;
+	template<typename Item>
+	class Scope {
+		Opt<Scope *> parent;
 		Map<std::string, Item *> dict;
 		Map<std::string, Vec<ItemRef<Item> *>> free_refs;
 
-        public:
+		public:
 
-        Scope() : parent {}, dict {}, free_refs {} {}
+		Scope() : parent {}, dict {}, free_refs {} {}
 
-        Vec<Item *> get_all_items() const {
+		Vec<Item *> get_all_items() const {
 			Vec<Item *> result;
 			if (this->parent) {
 				result = mv(static_cast<const Scope *>(*this->parent)->get_all_items());
@@ -212,7 +214,7 @@ namespace IR::program {
 			return result;
 		}
 
-        void set_parent(Scope &parent) {
+		void set_parent(Scope &parent) {
 			if (this->parent) {
 				std::cerr << "this scope already has a parent oops\n";
 				exit(1);
@@ -228,7 +230,7 @@ namespace IR::program {
 			this->free_refs.clear();
 		}
 
-        // returns whether free refs exist in this scope for the given name
+		// returns whether free refs exist in this scope for the given name
 		Vec<ItemRef<Item> *> get_free_refs() const {
 			std::vector<ItemRef<Item> *> result;
 			for (auto &[name, free_refs_vec] : this->free_refs) {
@@ -237,7 +239,7 @@ namespace IR::program {
 			return result;
 		}
 
-        // Adds the specified item to this scope under the specified name,
+		// Adds the specified item to this scope under the specified name,
 		// resolving all free refs who were depending on that name. Dies if
 		// there already exists an item under that name.
 		void resolve_item(std::string name, Item *item) {
@@ -257,7 +259,7 @@ namespace IR::program {
 			}
 		}
 
-        std::optional<Item *> get_item_maybe(std::string_view name) {
+		std::optional<Item *> get_item_maybe(std::string_view name) {
 			auto item_it = this->dict.find(name);
 			if (item_it != this->dict.end()) {
 				return std::make_optional<Item *>(item_it->second);
@@ -270,7 +272,7 @@ namespace IR::program {
 			}
 		}
 
-        // returns whether the ref was immediately bound or was left as free
+		// returns whether the ref was immediately bound or was left as free
 		bool add_ref(ItemRef<Item> &item_ref) {
 			std::string_view ref_name = item_ref.get_ref_name();
 
@@ -285,7 +287,7 @@ namespace IR::program {
 				return false;
 			}
 		}
-    };
+	};
 
 	struct AggregateScope {
 		Scope<Variable> variable_scope;
@@ -296,22 +298,22 @@ namespace IR::program {
 		void set_parent(AggregateScope &parent);
 	};
 
-    class Function {
-        public:
-        virtual const std::string &get_name() const = 0;
-        virtual std::string to_string() const = 0;
-    };
+	class Function {
+		public:
+		virtual const std::string &get_name() const = 0;
+		virtual std::string to_string() const = 0;
+	};
 
-    class IRFunction : public Function {
-        std::string name;
-        Vec<Uptr<BasicBlock>> blocks;
-        Vec<Uptr<Variable>> vars;
-        Vec<Variable *> parameter_vars;
+	class IRFunction : public Function {
+		std::string name;
+		Vec<Uptr<BasicBlock>> blocks;
+		Vec<Uptr<Variable>> vars;
+		Vec<Variable *> parameter_vars;
 		AggregateScope agg_scope;
 
-        public:
+		public:
 
-        IRFunction(
+		IRFunction(
 			std::string name,
 			Vec<Uptr<BasicBlock>> &&blocks,
 			Vec<Uptr<Variable>> &&vars,
@@ -324,10 +326,10 @@ namespace IR::program {
 			parameter_vars { mv(parameter_vars) },
 			agg_scope {mv(agg_scope)}
 		{}
-        virtual const std::string &get_name() const override { return this->name; }
-        Vec<Uptr<BasicBlock>> &get_blocks() { return this->blocks; }
-        const Vec<Variable *> &get_parameter_vars() const { return this->parameter_vars; }
-        AggregateScope &get_scope() { return this->agg_scope; }
+		virtual const std::string &get_name() const override { return this->name; }
+		Vec<Uptr<BasicBlock>> &get_blocks() { return this->blocks; }
+		const Vec<Variable *> &get_parameter_vars() const { return this->parameter_vars; }
+		AggregateScope &get_scope() { return this->agg_scope; }
 		virtual std::string to_string() const override;
 
 		class Builder {
@@ -346,9 +348,9 @@ namespace IR::program {
 			void add_block(Uptr<BasicBlock> &&bb);
 			void add_parameter(std::string type, std::string name);
 		};
-    };
+	};
 
-    class ExternalFunction : public Function {
+	class ExternalFunction : public Function {
 		std::string name;
 		Vec<int> num_arguments;
 
@@ -362,11 +364,11 @@ namespace IR::program {
 		virtual std::string to_string() const override;
 	};
 
-    class Program {
-        Vec<Uptr<IRFunction>> IR_functions;
-        Vec<Uptr<ExternalFunction>> external_functions;
+	class Program {
+		Vec<Uptr<IRFunction>> IR_functions;
+		Vec<Uptr<ExternalFunction>> external_functions;
 
-        Program(
+		Program(
 			Vec<Uptr<IRFunction>> &&IR_functions,
 			Vec<Uptr<ExternalFunction>> &&external_functions,
 			Uptr<ItemRef<IRFunction>> &&main_function_ref
@@ -375,10 +377,10 @@ namespace IR::program {
 			external_functions { mv(external_functions) }
 		{}
 
-        public:
+		public:
 
-        std::string to_string() const;
-        Vec<Uptr<IRFunction>> &get_IR_functions() { return this->IR_functions; }
+		std::string to_string() const;
+		Vec<Uptr<IRFunction>> &get_IR_functions() { return this->IR_functions; }
 		
 		class Builder {
 			Vec<Uptr<IRFunction>> IR_functions;
@@ -391,5 +393,5 @@ namespace IR::program {
 			void add_ir_function(Uptr<IRFunction> &&function);
 			Uptr<Program> get_result();
 		};
-    };
+	};
 }
