@@ -861,8 +861,8 @@ namespace IR::parser {
 			}
 		}
 		std::cout << "done with parse" << std::endl;
-		Uptr<IR::program::Program> ptr = node_processor::convert_program((*root)[0]);
-		std::cout << "done with memory representation firsst try we niggas in pariss" << std::endl;
+		// Uptr<IR::program::Program> ptr = node_processor::convert_program((*root)[0]);
+		std::cout << "done with memory representation " << std::endl;
 
 
 		return;
