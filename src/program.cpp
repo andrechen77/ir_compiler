@@ -3,7 +3,7 @@
 namespace L3::program {
 	using namespace std_alias;
 
-	std::pair<Type, int64_t> str_to_type(const std::string& str) {
+	std::pair<A_type, int64_t> str_to_a_type(const std::string& str) {
 		static const std::map<std::string, Type> stringToTypeMap = {
 			{"int64", Type::Int64},
 			{"code", Type::Code},
@@ -33,7 +33,7 @@ namespace L3::program {
 		}
 		return std::make_pair(sol_type, bracketPairs);
 	}
-	std::string to_string(Type t) {
+	std::string to_string(A_type t) {
 		switch (t) {
 			case Type::Int64: return "int64";
 			case Type::Code: return "code";
@@ -41,6 +41,20 @@ namespace L3::program {
 			case Type::Void: return "void";
 			default: return "unknown";
 		}
+	}
+	
+	Type(const std::string& str){
+		auto[a_type, num_dim]str_to_a_type(str);
+		this->a_type = a_type;
+		this->num_dim = num_dim;
+	}
+	std::string Type::to_string() {
+		std::string sol = "";
+		sol += to_string(this->a_type);
+		for(int i = 0; i < this->num_dim; i++) {
+			sol += "[]";
+		}
+		return sol;
 	}
 
 	Operator str_to_op(std::string str) {
@@ -85,6 +99,139 @@ namespace L3::program {
 		}
 	}
 	
+	template<> std::string ItemRef<Variable>::to_string() const {
+		std::string result = "%" + this->get_ref_name();
+		if (!this->referent_nullable) {
+			result += "?";
+		}
+		return result;
+	}
+	Template<> void ItemRef<Variable> bind_to_scope(AggregateScope &agg_scope){
+		agg_scope.variable_scope.add_ref(*this);
+	}
+	template<> std::string ItemRef<BasicBlock>::to_string() const {
+		std::string result = ":" + this->get_ref_name();
+		if (!this->referent_nullable) {
+			result += "?";
+		}
+		return result;
+	}
+	Template<> void ItemRef<BasicBlock> bind_to_scope(AggregateScope &agg_scope){
+		agg_scope.basic_block_scope.add_ref(*this);
+	}
+	template<> std::string ItemRef<IRFunction>::to_string() const {
+		std::string result = "@" + this->get_ref_name();
+		if (!this->referent_nullable) {
+			result += "?";
+		}
+		return result;
+	}
+	Template<> void ItemRef<IRFunction> bind_to_scope(AggregateScope &agg_scope){
+		agg_scope.ir_function_scope.add_ref(*this);
+	}
+	template<> std::string ItemRef<ExternalFunction>::to_string() const {
+		std::string result = this->get_ref_name();
+		if (!this->referent_nullable) {
+			result += "?";
+		}
+		return result;
+	}
+	Template<> void ItemRef<ExternalFunction> bind_to_scope(AggregateScope &agg_scope){
+		agg_scope.external_function_scope.add_ref(*this);
+	}
+
+	std::string BinaryOperation::to_string() const {
+		return this->lhs->to_string()
+			+ " " + program::to_string(this->op)
+			+ " " + this->rhs->to_string();
+	}
+	void BinaryOperation::bind_to_scope(AggregateScope &agg_scope) {
+		this->lhs->bind_to_scope(agg_scope);
+		this->rhs->bind_to_scope(agg_scope);
+	}
+	std::string FunctionCall::to_string() const {
+		std::string result = "call " + this->callee->to_string() + "(";
+		for (const Uptr<Expr> &argument : this->arguments) {
+			result += argument->to_string() + ", ";
+		}
+		result += ")";
+		return result;
+	}
+	void FunctionCall::bind_to_scope(AggregateScope &agg_scope) {
+		this->callee->bind_to_scope(agg_scope);
+		for (Uptr<Expr> &arg : this->arguments) {
+			arg->bind_to_scope(agg_scope);
+		}
+	}
+	std::string MemoryLocation::to_string() const {
+		std::string sol = "" + this->base->to_string();
+		for (const auto &expr : this->dimensions) {
+			sol += "["expr.to_string() + "]";
+		}
+		return sol;
+	}
+	void MemoryLocation::bind_to_scope(AggregateScope &agg_scope) {
+		this->base->bind_to_scope(agg_scope);
+		for (const auto &expr : this->dimensions) {
+			expr.bind_to_scope(agg_scope);
+		}
+	}
+	std::string ArrayDeclaration::to_string() const {
+		std::string sol = "new Array (";
+		for (const auto &arg : this->args) {
+			sol += arg->to_string() + ", ";
+		}
+		sol += ")";
+		return sol;
+	}
+	void ArrayDeclaration::bind_to_scope(AggregateScope &agg_scope) {
+		for (const auto &arg : this->args) {
+			arg.bind_to_scope(agg_scope);
+		}
+	}
+	std::string Length::to_string() const {
+		std::string sol = "Length " + this->var.to_string();
+		if (this->dimension.has_value()){
+			sol += " " + this->var.value();
+		}
+		return sol;
+	}
+	void Length::bind_to_scope(AggregateScope &agg_scope) {
+		this->var.bind_to_scope(agg_scope);
+		if (this->dimension.has_value()){
+			this->dimension.bind_to_scope(agg_scope);
+		}
+	}
+
+	std::string InstructionAssignment::to_string() const {
+		std::string sol = "";
+		if (this->maybe_dest.has_value()) {
+			sol += this->maybe_dest.value().to_string();
+			sol += " <- ";
+		}
+		sol += this->source.to_string();
+		return sol;
+	}
+	void InstructionAssignment::bind_to_scope(AggregateScope &agg_scope){
+		if (this->maybe_dest.has_value()) {
+			this->maybe_dest.value().bind_to_scope(agg_scope);
+		}
+		this->source.bind_to_scope(agg_scope);
+	}
+	std::string InstructionDeclaration::to_string() const {
+		return this->t.to_string() + " " + this->var.to_string();
+	}
+	void InstructionDeclaration::bind_to_scope(AggregateScope &agg_scope){
+		agg_scope.variable_scope.resolve_item(mv(this->var), this->var.get_name());
+		this->var.bind_to_scope(agg_scope);
+	}
+	std::string InstructionStore::to_string() const {
+		return this->dest.to_string() + " <- " + this-> source.to_string();
+	}
+	void InstructionStore::bind_to_scope(AggregateScope &agg_scope) {
+		this->dest.bind_to_scope(agg_scope);
+		this->source.bind_to_scope(agg_scope);
+	}
 
 	void TerminatorBranchOne::bind_to_scope(AggregateScope &agg_scope) {
 		this->bb_ref->bind_to_scope(agg_scope);
@@ -92,6 +239,23 @@ namespace L3::program {
 	std::string TerminatorBranchOne::to_string() {
 		return "br" + this->label->to_string();
 	}
+	void TerminatorBranchTwo::bind_to_scope(AggregateScope &agg_scope) {
+		this->condition->bind_to_scope(agg_scope);
+		this->branchTrue->bind_to_scope(agg_scope);
+		this->branchFalse->bind_to_scope(agg_scope);
+	}
+	std::string TerminatorBranchTwo::to_string() {
+		std::string sol = "br" + this->label->to_string()
+		sol += " " + this->branchTrue->to_string();
+		sol += " " + this->branchFalse->to_string()  + "\n";
+		return sol;
+	}
+	void TerminatorReturnVar::bind_to_scope(){
+		this->ret_var->bind_to_scope();
+	}
+	std::string TerminatorReturnVar::to_string() {
+		return "return" + this->ret_var->to_string();
+	} 
 	
 	Uptr<BasicBlock> BasicBlock::Builder::get_result() {
 		return Uptr<BasicBlock>( new BasicBlock(
@@ -135,14 +299,16 @@ namespace L3::program {
 	void IRFunction::Builder::add_name(std::string name) {
 		this->name = mv(name);
 	}
+	void IRFunction::builder::add_ret_type(Type t){
+		this->ret_type = mv(t);
+	}
 	void IRFunction::Builder::add_block(Uptr<BasicBlock> &&bb){
 		bb->bind_to_scope(this->agg_scope);
 		this->agg_scope.label_scope.resolve_item(mv(bb), bb.get());
 		this->basic_blocks.push_back(bb.get());
 	}
-	void IRFunction::Builder::add_parameter(std::string type, std::string var_name){
-		auto [t, dim] = str_to_type(type);
-		Uptr<Variable> var_ptr = mkuptr<Variable>(var_name, t, dim)
+	void IRFunction::Builder::add_parameter(Type type, std::string var_name){
+		Uptr<Variable> var_ptr = mkuptr<Variable>(var_name);
 		this->agg_scope.variable_scope.resolve_item(mv(var_name), var_ptr.get());
 		this->parameter_vars.push_back(var_ptr.get());
 		this->vars.emplace_back(mv(var_ptr));
@@ -172,7 +338,6 @@ namespace L3::program {
 			);
 			this->external_functions.emplace_back(mv(function_ptr));
 		}
-		this->agg_scope.l3_function_scope.add_ref(*this->main_function_ref);
 	}
 	void Program::Builder::add_ir_function(Uptr<IRFunction> &&function){
 		function.get_scope().set_parent(this->agg_scope);
@@ -181,9 +346,8 @@ namespace L3::program {
 	}
 	Uptr<Program> Program::Builder::get_result(){
 		return Uptr<Program>(new Program(
-			mv(this->l3_functions),
-			mv(this->external_functions),
-			mv(this->main_function_ref)
+			mv(this->ir_functions),
+			mv(this->external_functions)
 		));
 	}
 	Vec<Uptr<ExternalFunction>> generate_std_functions() {
