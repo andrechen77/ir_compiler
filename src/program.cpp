@@ -1,14 +1,14 @@
 #include "program.h"
 
-namespace L3::program {
+namespace IR::program {
 	using namespace std_alias;
 
 	std::pair<A_type, int64_t> str_to_a_type(const std::string& str) {
-		static const std::map<std::string, Type> stringToTypeMap = {
-			{"int64", Type::Int64},
-			{"code", Type::Code},
-			{"tuple", Type::Tuple},
-			{"void", Type::Void}
+		static const std::map<std::string, A_type> stringToTypeMap = {
+			{"int64", A_type::Int64},
+			{"code", A_type::Code},
+			{"tuple", A_type::Tuple},
+			{"void", A_type::Void}
 		};
 		int transitionIndex = -1;
 		for (int i = 0; i < str.size(); ++i) {
@@ -17,7 +17,7 @@ namespace L3::program {
 				break;
 			}
 		}
-		Type sol_type;
+		A_type sol_type;
 		if (transitionIndex == -1) {
 			sol_type = stringToTypeMap.find(str)->second;
 		} else {
@@ -35,22 +35,31 @@ namespace L3::program {
 	}
 	std::string to_string(A_type t) {
 		switch (t) {
-			case Type::Int64: return "int64";
-			case Type::Code: return "code";
-			case Type::Tuple: return "tuple";
-			case Type::Void: return "void";
+			case A_type::Int64: return "int64";
+			case A_type::Code: return "code";
+			case A_type::Tuple: return "tuple";
+			case A_type::Void: return "void";
 			default: return "unknown";
 		}
 	}
 	
-	Type(const std::string& str){
-		auto[a_type, num_dim]str_to_a_type(str);
+	Type::Type(const std::string& str){
+		auto[a_type, num_dim] = str_to_a_type(str);
 		this->a_type = a_type;
 		this->num_dim = num_dim;
 	}
-	std::string Type::to_string() {
+	std::string Type::to_string() const {
 		std::string sol = "";
-		sol += to_string(this->a_type);
+		switch (this->a_type) {
+			case A_type::Int64: sol += "int64";
+			case A_type::Code: sol += "code";
+			case A_type::Tuple: sol += "tuple";
+			case A_type::Void: sol += "void";
+			default: 
+				std::cerr << "detected unknown type: " << std::endl;
+				exit(-1);
+		}
+
 		for(int i = 0; i < this->num_dim; i++) {
 			sol += "[]";
 		}
@@ -106,7 +115,7 @@ namespace L3::program {
 		}
 		return result;
 	}
-	Template<> void ItemRef<Variable> bind_to_scope(AggregateScope &agg_scope){
+	template<> void ItemRef<Variable>::bind_to_scope(AggregateScope &agg_scope){
 		agg_scope.variable_scope.add_ref(*this);
 	}
 	template<> std::string ItemRef<BasicBlock>::to_string() const {
@@ -116,7 +125,7 @@ namespace L3::program {
 		}
 		return result;
 	}
-	Template<> void ItemRef<BasicBlock> bind_to_scope(AggregateScope &agg_scope){
+	template<> void ItemRef<BasicBlock>::bind_to_scope(AggregateScope &agg_scope){
 		agg_scope.basic_block_scope.add_ref(*this);
 	}
 	template<> std::string ItemRef<IRFunction>::to_string() const {
@@ -126,7 +135,7 @@ namespace L3::program {
 		}
 		return result;
 	}
-	Template<> void ItemRef<IRFunction> bind_to_scope(AggregateScope &agg_scope){
+	template<> void ItemRef<IRFunction>::bind_to_scope(AggregateScope &agg_scope){
 		agg_scope.ir_function_scope.add_ref(*this);
 	}
 	template<> std::string ItemRef<ExternalFunction>::to_string() const {
@@ -136,8 +145,12 @@ namespace L3::program {
 		}
 		return result;
 	}
-	Template<> void ItemRef<ExternalFunction> bind_to_scope(AggregateScope &agg_scope){
+	template<> void ItemRef<ExternalFunction>::bind_to_scope(AggregateScope &agg_scope){
 		agg_scope.external_function_scope.add_ref(*this);
+	}
+
+	std::string Variable::to_string() const {
+		return "%" + this->get_name();
 	}
 
 	std::string BinaryOperation::to_string() const {
@@ -166,14 +179,14 @@ namespace L3::program {
 	std::string MemoryLocation::to_string() const {
 		std::string sol = "" + this->base->to_string();
 		for (const auto &expr : this->dimensions) {
-			sol += "["expr.to_string() + "]";
+			sol += "[" + expr->to_string() + "]";
 		}
 		return sol;
 	}
 	void MemoryLocation::bind_to_scope(AggregateScope &agg_scope) {
 		this->base->bind_to_scope(agg_scope);
 		for (const auto &expr : this->dimensions) {
-			expr.bind_to_scope(agg_scope);
+			expr->bind_to_scope(agg_scope);
 		}
 	}
 	std::string ArrayDeclaration::to_string() const {
@@ -186,78 +199,75 @@ namespace L3::program {
 	}
 	void ArrayDeclaration::bind_to_scope(AggregateScope &agg_scope) {
 		for (const auto &arg : this->args) {
-			arg.bind_to_scope(agg_scope);
+			arg->bind_to_scope(agg_scope);
 		}
 	}
 	std::string Length::to_string() const {
-		std::string sol = "Length " + this->var.to_string();
+		std::string sol = "Length " + this->var->to_string();
 		if (this->dimension.has_value()){
-			sol += " " + this->var.value();
+			sol += " " + this->var->to_string();
 		}
 		return sol;
 	}
 	void Length::bind_to_scope(AggregateScope &agg_scope) {
-		this->var.bind_to_scope(agg_scope);
-		if (this->dimension.has_value()){
-			this->dimension.bind_to_scope(agg_scope);
-		}
+		this->var->bind_to_scope(agg_scope);
 	}
 
 	std::string InstructionAssignment::to_string() const {
 		std::string sol = "";
 		if (this->maybe_dest.has_value()) {
-			sol += this->maybe_dest.value().to_string();
+			sol += this->maybe_dest.value()->to_string();
 			sol += " <- ";
 		}
-		sol += this->source.to_string();
+		sol += this->source->to_string();
 		return sol;
 	}
 	void InstructionAssignment::bind_to_scope(AggregateScope &agg_scope){
 		if (this->maybe_dest.has_value()) {
-			this->maybe_dest.value().bind_to_scope(agg_scope);
+			this->maybe_dest.value()->bind_to_scope(agg_scope);
 		}
-		this->source.bind_to_scope(agg_scope);
+		this->source->bind_to_scope(agg_scope);
 	}
 	std::string InstructionDeclaration::to_string() const {
-		return this->t.to_string() + " " + this->var.to_string();
+		return this->t.to_string() + " " + this->base->get_ref_name();
 	}
 	void InstructionDeclaration::bind_to_scope(AggregateScope &agg_scope){
-		agg_scope.variable_scope.resolve_item(mv(this->var), this->var.get_name());
-		this->var.bind_to_scope(agg_scope);
+		this->base->bind_to_scope(agg_scope);
 	}
 	std::string InstructionStore::to_string() const {
-		return this->dest.to_string() + " <- " + this-> source.to_string();
+		return this->dest->to_string() + " <- " + this-> source->to_string();
 	}
 	void InstructionStore::bind_to_scope(AggregateScope &agg_scope) {
-		this->dest.bind_to_scope(agg_scope);
-		this->source.bind_to_scope(agg_scope);
+		this->dest->bind_to_scope(agg_scope);
+		this->source->bind_to_scope(agg_scope);
 	}
 
 	void TerminatorBranchOne::bind_to_scope(AggregateScope &agg_scope) {
 		this->bb_ref->bind_to_scope(agg_scope);
 	}
-	std::string TerminatorBranchOne::to_string() {
-		return "br" + this->label->to_string();
+	std::string TerminatorBranchOne::to_string() const {
+		return "br" + this->bb_ref->to_string();
 	}
 	void TerminatorBranchTwo::bind_to_scope(AggregateScope &agg_scope) {
 		this->condition->bind_to_scope(agg_scope);
 		this->branchTrue->bind_to_scope(agg_scope);
 		this->branchFalse->bind_to_scope(agg_scope);
 	}
-	std::string TerminatorBranchTwo::to_string() {
-		std::string sol = "br" + this->label->to_string()
+	std::string TerminatorBranchTwo::to_string() const {
+		std::string sol = "br" + this->condition->to_string();
 		sol += " " + this->branchTrue->to_string();
 		sol += " " + this->branchFalse->to_string()  + "\n";
 		return sol;
 	}
-	void TerminatorReturnVar::bind_to_scope(){
-		this->ret_var->bind_to_scope();
+	void TerminatorReturnVar::bind_to_scope(AggregateScope &agg_scope) {
+		this->ret_var->bind_to_scope(agg_scope);
 	}
-	std::string TerminatorReturnVar::to_string() {
+	std::string TerminatorReturnVar::to_string() const {
 		return "return" + this->ret_var->to_string();
 	} 
 	
 	Uptr<BasicBlock> BasicBlock::Builder::get_result() {
+		
 		return Uptr<BasicBlock>( new BasicBlock(
 			mv(this->name),
 			mv(this->inst),
@@ -268,7 +278,7 @@ namespace L3::program {
 		this->name = mv(name);
 	}
 	void BasicBlock::Builder::add_instruction(Uptr<Instruction> &&inst) {
-		this->inst.push_back(inst.get());
+		this->inst.push_back(mv(inst));
 	}
 	void BasicBlock::Builder::add_terminator(Uptr<Terminator> &&te) {
 		this->te = mv(te);
@@ -279,6 +289,7 @@ namespace L3::program {
 			sol += inst->to_string();
 		}
 		sol += this->te->to_string() + "\n";
+		return sol;
 	}
 	void BasicBlock::bind_to_scope(AggregateScope &scope){
 		for (auto const& inst: this->inst) {
@@ -287,9 +298,22 @@ namespace L3::program {
 		this->te->bind_to_scope(scope);
 	}
 
+	void AggregateScope::set_parent(AggregateScope &parent) {
+		this->variable_scope.set_parent(parent.variable_scope);
+		this->basic_block_scope.set_parent(parent.basic_block_scope);
+		this->ir_function_scope.set_parent(parent.ir_function_scope);
+		this->external_function_scope.set_parent(parent.external_function_scope);
+	}
+
 	Uptr<IRFunction> IRFunction::Builder::get_result() {
+		for (std::string name : this->agg_scope.variable_scope.get_free_names()) {
+			Uptr<Variable> var_ptr = mkuptr<Variable>(name);
+			this->agg_scope.variable_scope.resolve_item(mv(name), var_ptr.get());
+			this->vars.emplace_back(mv(var_ptr));
+		}
 		return Uptr<IRFunction>(new IRFunction(
 			mv(this->name),
+			mv(this->ret_type),
 			mv(this->basic_blocks),
 			mv(this->vars),
 			mv(this->parameter_vars),
@@ -299,13 +323,13 @@ namespace L3::program {
 	void IRFunction::Builder::add_name(std::string name) {
 		this->name = mv(name);
 	}
-	void IRFunction::builder::add_ret_type(Type t){
+	void IRFunction::Builder::add_ret_type(Type t){
 		this->ret_type = mv(t);
 	}
 	void IRFunction::Builder::add_block(Uptr<BasicBlock> &&bb){
 		bb->bind_to_scope(this->agg_scope);
-		this->agg_scope.label_scope.resolve_item(mv(bb), bb.get());
-		this->basic_blocks.push_back(bb.get());
+		this->agg_scope.basic_block_scope.resolve_item(bb->get_name(), bb.get());
+		this->basic_blocks.push_back(mv(bb));
 	}
 	void IRFunction::Builder::add_parameter(Type type, std::string var_name){
 		Uptr<Variable> var_ptr = mkuptr<Variable>(var_name);
@@ -340,9 +364,9 @@ namespace L3::program {
 		}
 	}
 	void Program::Builder::add_ir_function(Uptr<IRFunction> &&function){
-		function.get_scope().set_parent(this->agg_scope);
+		function->get_scope().set_parent(this->agg_scope);
 		this->agg_scope.ir_function_scope.resolve_item(function->get_name(), function.get());
-		this->ir_functions.push_back(mv(function))
+		this->ir_functions.push_back(mv(function));
 	}
 	Uptr<Program> Program::Builder::get_result(){
 		return Uptr<Program>(new Program(
@@ -361,7 +385,7 @@ namespace L3::program {
 	}
 	std::string Program::to_string() const {
 		std::string result;
-		for (const Uptr<L3Function> &function : this->l3_functions) {
+		for (const Uptr<IRFunction> &function : this->ir_functions) {
 			result += function->to_string() + "\n";
 		}
 		return result;

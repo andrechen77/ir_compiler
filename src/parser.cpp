@@ -459,6 +459,7 @@ namespace IR::parser {
 				ArgsRule,
 				DefineArgRule,
 				TypeRule,
+				VoidableTypeRule,
 				DefineArgsRule,
 				ArrayAccess,
 				StdFunctionNameRule,
@@ -474,6 +475,10 @@ namespace IR::parser {
 				InstructionTupleDeclarationRule,
 				InstructionPureAssignmentRule,
 				InstructionsRule,
+				TerminatorBranchOneRule,
+				TerminatorBranchTwoRule,
+				TerminatorReturnVarRule,
+				TerminatorReturnVoidRule,
 				BasicBlockRule,
 				BasicBlocksRule,
 				FunctionRule,
@@ -554,9 +559,13 @@ namespace IR::parser {
 			assert(*n.rule == typeid(rules::TypeRule));
 			return Type(std::string(n[0].string_view()));
 		}
+		Type convert_voidable_type_rule(const ParseNode &n) {
+			assert(*n.rule == typeid(rules::VoidableTypeRule));
+			return Type(std::string(n.string_view()));
+		}
 		Uptr<ItemRef<Variable>> convert_variable_ref(const ParseNode &n) {
 			assert(*n.rule == typeid(rules::VariableRule));
-			return mkuptr<ItemRef<Variable>>(std::string(convert_name_rule(n[0])));
+			return mkuptr<ItemRef<Variable>>(convert_name_rule(n[0]));
 		}
 		Uptr<ItemRef<BasicBlock>> convert_basic_block_ref(const ParseNode &n) {
 			assert(*n.rule == typeid(rules::LabelRule));
@@ -610,13 +619,13 @@ namespace IR::parser {
 		Uptr<Instruction> convert_instruction_var_declaration(const ParseNode &n){
 			assert(*n.rule == typeid(rules::InstructionTypeDeclaratioRule));
 			return mkuptr<InstructionDeclaration>(
-				convert_type_rule(n[0]),
-				convert_variable_ref(n[1])
+				convert_type_rule(n[0][0]),
+				mkuptr<ItemRef<Variable>>(convert_name_rule(n[1][0]))
 			);
 		}
 		Uptr<Instruction> convert_instruction_array_load(const ParseNode &n){
 			assert(*n.rule == typeid(rules::InstructionArrayLoadRule));
-			mkuptr<InstructionAssignment>(
+			return mkuptr<InstructionAssignment>(
 				convert_variable_ref(n[0]),
 				mkuptr<MemoryLocation>(
 					convert_variable_ref(n[1]),
@@ -626,7 +635,7 @@ namespace IR::parser {
 		}
 		Uptr<Instruction> convert_instruction_array_store(const ParseNode &n){
 			assert(*n.rule == typeid(rules::InstructionArrayStoreRule));
-			mkuptr<InstructionStore>(
+			return mkuptr<InstructionStore>(
 				mkuptr<MemoryLocation>(
 					convert_variable_ref(n[0]),
 					convert_array_access(n[1])
@@ -659,7 +668,7 @@ namespace IR::parser {
 				convert_variable_ref(n[0]),
 				mkuptr<Length>(
 					convert_variable_ref(n[1]),
-					convert_number_literal(n[2])
+					convert_number_literal(n[2]).get()->get_value()
 				)
 			);
 		}
@@ -678,8 +687,8 @@ namespace IR::parser {
 				convert_variable_ref(n[0]),
 				mkuptr<BinaryOperation>(
 					convert_expr(n[1]),
-					str_to_op(std::string(n[2].string_view())),
-					convert_expr(n[3])
+					convert_expr(n[3]),
+					str_to_op(std::string(n[2].string_view()))
 				)
 			);
 		}
@@ -706,14 +715,14 @@ namespace IR::parser {
 			return mkuptr<InstructionAssignment>(
 				convert_variable_ref(n[0]),
 				mkuptr<ArrayDeclaration>(
-					sol
+					mv(sol)
 				)
 			);
 		}
 		Uptr<Instruction> convert_instruction(const ParseNode &n){
 			const std::type_info &rule = *n.rule;
 			if (rule == typeid(rules::InstructionArrayDeclarationRule)) {
-				convert_instruction_array_declaration(n);
+				return convert_instruction_array_declaration(n);
 			} else if (rule == typeid(rules::InstructionArrayLoadRule)) {
 				return convert_instruction_array_load(n);
 			} else if (rule == typeid(rules::InstructionArrayStoreRule)) {
@@ -785,10 +794,10 @@ namespace IR::parser {
 			const ParseNode& inst_nodes = n[1];
 			assert(*inst_nodes.rule == typeid(rules::InstructionsRule));
 			for (const Uptr<ParseNode> &inst : inst_nodes.children) {
-				b_builder.add_instruction(convert_instruction((*inst)[0]));
+				b_builder.add_instruction(convert_instruction((*inst)));
 			}
 
-			return b_builder.get_result();
+			return mv(b_builder.get_result());
 		}
 
 		Uptr<IRFunction> convert_ir_function(const ParseNode& n) {
@@ -796,13 +805,13 @@ namespace IR::parser {
 			IRFunction::Builder f_builder;
 
 			// add function name
-			f_builder.add_name(std::string(convert_name_rule(n[0][0])));
+			f_builder.add_name(std::string(convert_name_rule(n[1][0])));
 
 			// add function return type
-			f_builder.add_ret_type(convert_type_rule(n[1]));
+			f_builder.add_ret_type(convert_voidable_type_rule(n[0]));
 
 			// add function parameters
-			const ParseNode &def_args = n[1];
+			const ParseNode &def_args = n[2];
 			assert(*def_args.rule == typeid(rules::DefineArgsRule));
 			for (const Uptr<ParseNode> &def_arg : def_args.children) {
 				f_builder.add_parameter(
@@ -812,7 +821,7 @@ namespace IR::parser {
 			}
 
 			// add BasicBlocks
-			const ParseNode &basic_blocks = n[2];
+			const ParseNode &basic_blocks = n[3];
 			assert(*basic_blocks.rule == typeid(rules::BasicBlocksRule));
 			for (const Uptr<ParseNode> &bb : basic_blocks.children) {
 				f_builder.add_block(convert_basic_block(*bb));
@@ -828,7 +837,7 @@ namespace IR::parser {
 				p_builder.add_ir_function(mv(function));
 
 			}
-			p_builder.get_result();
+			return p_builder.get_result();
 		}
 	}
 
@@ -852,6 +861,8 @@ namespace IR::parser {
 			}
 		}
 		std::cout << "done with parse" << std::endl;
+		Uptr<IR::program::Program> ptr = node_processor::convert_program((*root)[0]);
+		std::cout << "done with memory representation firsst try we niggas in pariss" << std::endl;
 
 
 		return;
