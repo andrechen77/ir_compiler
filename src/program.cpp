@@ -2,13 +2,12 @@
 
 namespace IR::program {
 	using namespace std_alias;
-
 	std::pair<A_type, int64_t> str_to_a_type(const std::string& str) {
 		static const std::map<std::string, A_type> stringToTypeMap = {
-			{"int64", A_type::Int64},
-			{"code", A_type::Code},
-			{"tuple", A_type::Tuple},
-			{"void", A_type::Void}
+			{"int64", A_type::int64},
+			{"code", A_type::code},
+			{"tuple", A_type::tuple},
+			{"void", A_type::void_type}
 		};
 		int transitionIndex = -1;
 		for (int i = 0; i < str.size(); ++i) {
@@ -21,9 +20,8 @@ namespace IR::program {
 		if (transitionIndex == -1) {
 			sol_type = stringToTypeMap.find(str)->second;
 		} else {
-			sol_type = stringToTypeMap.find(str.substr(0, transitionIndex + 1))->second;
+			sol_type = stringToTypeMap.find(str.substr(0, transitionIndex))->second;
 		}
-		
 		int bracketPairs = 0;
 		for (int i = transitionIndex; i < str.size(); ++i) {
 			if (str[i] == '[' && i + 1 < str.size() && str[i + 1] == ']') {
@@ -35,10 +33,10 @@ namespace IR::program {
 	}
 	std::string to_string(A_type t) {
 		switch (t) {
-			case A_type::Int64: return "int64";
-			case A_type::Code: return "code";
-			case A_type::Tuple: return "tuple";
-			case A_type::Void: return "void";
+			case A_type::int64: return "int64";
+			case A_type::code: return "code";
+			case A_type::tuple: return "tuple";
+			case A_type::void_type : return "void";
 			default: return "unknown";
 		}
 	}
@@ -49,16 +47,14 @@ namespace IR::program {
 		this->num_dim = num_dim;
 	}
 	std::string Type::to_string() const {
-		std::string sol = "";
-		switch (this->a_type) {
-			case A_type::Int64: sol += "int64";
-			case A_type::Code: sol += "code";
-			case A_type::Tuple: sol += "tuple";
-			case A_type::Void: sol += "void";
-			default: 
-				std::cerr << "detected unknown type: " << std::endl;
-				exit(-1);
-		}
+		static const std::map< A_type, std::string> type_to_str = {
+			{A_type::int64, "int64"},
+			{A_type::code, "code"},
+			{A_type::tuple, "tuple"},
+			{A_type::void_type, "void"}
+		};
+		std::string sol = type_to_str.find(this->a_type)->second;;
+
 
 		for(int i = 0; i < this->num_dim; i++) {
 			sol += "[]";
@@ -229,10 +225,16 @@ namespace IR::program {
 		this->source->bind_to_scope(agg_scope);
 	}
 	std::string InstructionDeclaration::to_string() const {
-		return this->t.to_string() + " " + this->base->get_ref_name();
+		std::string sol =  this->t.to_string() + " ";
+		ItemRef<Variable> *var_ref = this->var.get();
+		std::cout << var_ref->get_ref_name() << std::endl;
+		Variable *var = var_ref->get_referent().value();
+		std::cout << var->get_name() << std::endl;
+		sol += this->var->to_string();
+		return sol;
 	}
 	void InstructionDeclaration::bind_to_scope(AggregateScope &agg_scope){
-		this->base->bind_to_scope(agg_scope);
+		this->var->bind_to_scope(agg_scope);
 	}
 	std::string InstructionStore::to_string() const {
 		return this->dest->to_string() + " <- " + this-> source->to_string();
@@ -266,9 +268,8 @@ namespace IR::program {
 		return "return" + this->ret_var->to_string();
 	} 
 	
-	Uptr<BasicBlock> BasicBlock::Builder::get_result() {
-		
-		return Uptr<BasicBlock>( new BasicBlock(
+	Uptr<BasicBlock> BasicBlock::Builder::get_result() {	
+		return Uptr<BasicBlock>(new BasicBlock(
 			mv(this->name),
 			mv(this->inst),
 			mv(this->te)
@@ -284,11 +285,11 @@ namespace IR::program {
 		this->te = mv(te);
 	}
 	std::string BasicBlock::to_string() const {
-		std::string sol = ":" + this->name + "\n";
+		std::string sol = "\t:" + this->name + "\n";
 		for (const Uptr<Instruction> &inst : this->inst) {
-			sol += inst->to_string();
+			sol += "\t" + inst->to_string() + "\n";
 		}
-		sol += this->te->to_string() + "\n";
+		sol += "\t"+ this->te->to_string() + "\n";
 		return sol;
 	}
 	void BasicBlock::bind_to_scope(AggregateScope &scope){
@@ -306,10 +307,11 @@ namespace IR::program {
 	}
 
 	Uptr<IRFunction> IRFunction::Builder::get_result() {
+		int bounded = 0;
 		for (std::string name : this->agg_scope.variable_scope.get_free_names()) {
-			Uptr<Variable> var_ptr = mkuptr<Variable>(name);
-			this->agg_scope.variable_scope.resolve_item(mv(name), var_ptr.get());
-			this->vars.emplace_back(mv(var_ptr));
+			Uptr<Variable> var = mkuptr<Variable>(name);
+			this->vars.emplace_back(mv(var));
+			bounded += this->agg_scope.variable_scope.resolve_item(mv(name), this->vars.back().get());
 		}
 		return Uptr<IRFunction>(new IRFunction(
 			mv(this->name),
@@ -344,7 +346,7 @@ namespace IR::program {
 		}
 		result += ") {\n";
 		for (const Uptr<BasicBlock> &block : this->blocks) {
-			result += block->to_string();
+			result += block->to_string() + "\n";
 		}
 		result += "}";
 		return result;
@@ -384,7 +386,7 @@ namespace IR::program {
 		return result;
 	}
 	std::string Program::to_string() const {
-		std::string result;
+		std::string result = "";
 		for (const Uptr<IRFunction> &function : this->ir_functions) {
 			result += function->to_string() + "\n";
 		}

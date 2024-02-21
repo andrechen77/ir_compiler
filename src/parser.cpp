@@ -475,6 +475,7 @@ namespace IR::parser {
 				InstructionTupleDeclarationRule,
 				InstructionPureAssignmentRule,
 				InstructionsRule,
+				TerminatorRule,
 				TerminatorBranchOneRule,
 				TerminatorBranchTwoRule,
 				TerminatorReturnVarRule,
@@ -557,7 +558,7 @@ namespace IR::parser {
 		}
 		Type convert_type_rule(const ParseNode &n) {
 			assert(*n.rule == typeid(rules::TypeRule));
-			return Type(std::string(n[0].string_view()));
+			return Type(std::string(n.string_view()));
 		}
 		Type convert_voidable_type_rule(const ParseNode &n) {
 			assert(*n.rule == typeid(rules::VoidableTypeRule));
@@ -756,7 +757,7 @@ namespace IR::parser {
 		Uptr<Terminator> convert_terminator_branch_two(const ParseNode &n) {
 			assert(*n.rule == typeid(rules::TerminatorBranchTwoRule));
 			return mkuptr<TerminatorBranchTwo>(
-				convert_variable_ref(n[0]),
+				convert_expr(n[0]),
 				convert_basic_block_ref(n[1]),
 				convert_basic_block_ref(n[2])
 			);
@@ -766,19 +767,19 @@ namespace IR::parser {
 			return mkuptr<TerminatorReturnVoid>();
 		}
 		Uptr<Terminator> convert_terminator_return_var(const ParseNode &n) {
-			assert(*n.rule == typeid(rules::TerminatorReturnVoidRule));
+			assert(*n.rule == typeid(rules::TerminatorReturnVarRule));
 			return mkuptr<TerminatorReturnVar>(convert_variable_ref(n[0]));
 		}
 		Uptr<Terminator> convert_terminator(const ParseNode &n){
-			const std::type_info &rule = *n.rule;
+			const std::type_info &rule = *n[0].rule;
 			if (rule == typeid(rules::TerminatorBranchOneRule)) {
-				return convert_terminator_branch_one(n);
+				return convert_terminator_branch_one(n[0]);
 			} else if (rule == typeid(rules::TerminatorBranchTwoRule)) {
-				return convert_terminator_branch_two(n);
+				return convert_terminator_branch_two(n[0]);
 			} else if (rule == typeid(rules::TerminatorReturnVoidRule)) {
-				return convert_terminator_return_void(n);
+				return convert_terminator_return_void(n[0]);
 			} else if (rule == typeid(rules::TerminatorReturnVarRule)) {
-				return convert_terminator_return_var(n);
+				return convert_terminator_return_var(n[0]);
 			} else {
 				std::cerr << "Not a valid terminator: " << std::string(n.string_view()) << std::endl;
 				exit(-1);
@@ -809,17 +810,18 @@ namespace IR::parser {
 
 			// add function return type
 			f_builder.add_ret_type(convert_voidable_type_rule(n[0]));
-
+			
 			// add function parameters
 			const ParseNode &def_args = n[2];
 			assert(*def_args.rule == typeid(rules::DefineArgsRule));
 			for (const Uptr<ParseNode> &def_arg : def_args.children) {
+				Type t = convert_type_rule((*def_arg)[0]);
+				std::string var_name = convert_name_rule((*def_arg)[1][0]);
 				f_builder.add_parameter(
 					convert_type_rule((*def_arg)[0]),
-					convert_name_rule((*def_arg)[1])
+					convert_name_rule((*def_arg)[1][0])
 				);
 			}
-
 			// add BasicBlocks
 			const ParseNode &basic_blocks = n[3];
 			assert(*basic_blocks.rule == typeid(rules::BasicBlocksRule));
@@ -835,7 +837,6 @@ namespace IR::parser {
 			for (const Uptr<ParseNode> &child : n.children) {
 				auto function = convert_ir_function(*child);
 				p_builder.add_ir_function(mv(function));
-
 			}
 			return p_builder.get_result();
 		}
@@ -860,10 +861,10 @@ namespace IR::parser {
 				output_fstream.close();
 			}
 		}
-		std::cout << "done with parse" << std::endl;
-		// Uptr<IR::program::Program> ptr = node_processor::convert_program((*root)[0]);
-		std::cout << "done with memory representation " << std::endl;
-
+		std::cout << "done with parsing" << std::endl;
+		Uptr<IR::program::Program> ptr = node_processor::convert_program((*root)[0]);
+		std::cout << "starting to_string" << std::endl;
+		std::cout << ptr->to_string() << std::endl;
 
 		return;
 	}

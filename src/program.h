@@ -11,12 +11,11 @@
 
 namespace IR::program {
 	using namespace std_alias;
-
 	enum class A_type {
-		Int64,
-		Code,
-		Tuple,
-		Void
+		int64,
+		code,
+		tuple,
+		void_type 
 	};
 
 	class AggregateScope;
@@ -27,7 +26,7 @@ namespace IR::program {
 	
 	std::pair<A_type, int64_t> str_to_type(const std::string& str);
 	std::string to_string(A_type t);
-
+	
 	class Type{
 		A_type a_type;
 		int64_t num_dim;
@@ -41,7 +40,6 @@ namespace IR::program {
 		int64_t get_num_dimensions(){return this->num_dim;}
 		A_type get_a_type() {return this->a_type;}
 	};
-
 	class Expr {
 		public: 
 
@@ -80,7 +78,6 @@ namespace IR::program {
 			this->referent_nullable = referent;
 		}
 	};
-
 	class NumberLiteral : public Expr {
 		int64_t value;
 
@@ -201,14 +198,14 @@ namespace IR::program {
 	};
 	class InstructionDeclaration: public Instruction {
 		Type t;
-		Uptr<ItemRef<Variable>> base;
+		Uptr<ItemRef<Variable>> var;
 
 		public:
-		InstructionDeclaration(Type t, Uptr<ItemRef<Variable>> base): 
-			t {mv(t)}, base {mv(base)} 
+		InstructionDeclaration(Type t, Uptr<ItemRef<Variable>> var): 
+			t {mv(t)}, var {mv(var)} 
 		{}
 		virtual void bind_to_scope(AggregateScope &agg_scope) override;
-		virtual Opt<Variable *> get_referent() {return this->base->get_referent(); }
+		virtual Opt<Variable *> get_referent() {return this->var->get_referent(); }
 		virtual std::string to_string() const override;
 	};
 	class InstructionStore: public Instruction {
@@ -240,14 +237,14 @@ namespace IR::program {
 		virtual std::string to_string() const;
 	};
 	class TerminatorBranchTwo : public Terminator{
-		Uptr<ItemRef<Variable>> condition;
+		Uptr<Expr> condition;
 		Uptr<ItemRef<BasicBlock>> branchTrue;
 		Uptr<ItemRef<BasicBlock>> branchFalse;
 
 		public:
 
 		TerminatorBranchTwo(
-			Uptr<ItemRef<Variable>> condition,
+			Uptr<Expr> condition,
 			Uptr<ItemRef<BasicBlock>> branchTrue,
 			Uptr<ItemRef<BasicBlock>> branchFalse
 		):
@@ -368,7 +365,8 @@ namespace IR::program {
 		// Adds the specified item to this scope under the specified name,
 		// resolving all free refs who were depending on that name. Dies if
 		// there already exists an item under that name.
-		void resolve_item(std::string name, Item *item) {
+		int resolve_item(std::string name, Item *item) {
+			int x = 0;
 			auto existing_item_it = this->dict.find(name);
 			if (existing_item_it != this->dict.end()) {
 				std::cerr << "name conflict: " << name << std::endl;
@@ -377,12 +375,15 @@ namespace IR::program {
 
 			const auto [item_it, _] = this->dict.insert(std::make_pair(name, item));
 			auto free_refs_vec_it = this->free_refs.find(name);
+			
 			if (free_refs_vec_it != this->free_refs.end()) {
 				for (ItemRef<Item> *item_ref_ptr : free_refs_vec_it->second) {
 					item_ref_ptr->bind(item_it->second);
+					x ++;
 				}
 				this->free_refs.erase(free_refs_vec_it);
 			}
+			return x;
 		}
 
 		std::optional<Item *> get_item_maybe(std::string_view name) {
@@ -446,7 +447,7 @@ namespace IR::program {
 		std::string name;
 		Type ret_type;
 		Vec<Uptr<BasicBlock>> blocks;
-		Vec<Uptr<Variable>> &&vars;
+		Vec<Uptr<Variable>> vars;
 		Vec<Variable *> parameter_vars;
 		AggregateScope agg_scope;
 
@@ -455,8 +456,8 @@ namespace IR::program {
 		IRFunction(
 			std::string name,
 			Type ret_type,
-			Vec<Uptr<BasicBlock>> &&blocks,
-			Vec<Uptr<Variable>> &&vars,
+			Vec<Uptr<BasicBlock>> blocks,
+			Vec<Uptr<Variable>> vars,
 			Vec<Variable *> parameter_vars,
 			AggregateScope agg_scope
 		) :
