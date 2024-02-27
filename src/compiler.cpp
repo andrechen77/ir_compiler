@@ -1,4 +1,6 @@
 #include "std_alias.h"
+#include "tracer.h"
+#include "code_gen.h"
 #include "parser.h"
 #include <string>
 #include <vector>
@@ -59,10 +61,17 @@ int main(
 				return 1;
 		}
 	}
-	IR::parser::parse_input(
+	Uptr<IR::program::Program> p = IR::parser::parse_input(
 		argv[optind],
 		output_parse_tree ? std::make_optional("parse_tree.dot") : Opt<std::string>()
 	);
+	// std::cout << p->to_string() << std::endl;
+	if (enable_code_generator) {
+		std::ofstream o;
+		o.open("prog.L3");
+		IR::code_gen::generate_program_code(*p, o);
+		o.close();
+	}
 
     return 0;
 }

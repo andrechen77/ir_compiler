@@ -1,9 +1,5 @@
-#include "std_alias.h"
+
 #include "parser.h"
-#include "program.h"
-#include <fstream>
-#include <assert.h>
-#include <string_view>
 
 #include <tao/pegtl.hpp>
 #include <tao/pegtl/contrib/analyze.hpp>
@@ -620,8 +616,10 @@ namespace IR::parser {
 		Uptr<Instruction> convert_instruction_var_declaration(const ParseNode &n){
 			assert(*n.rule == typeid(rules::InstructionTypeDeclaratioRule));
 			return mkuptr<InstructionDeclaration>(
-				convert_type_rule(n[0][0]),
-				mkuptr<ItemRef<Variable>>(convert_name_rule(n[1][0]))
+				mkuptr<Variable>(
+					convert_name_rule(n[1][0]),
+					convert_type_rule(n[0][0])
+				)
 			);
 		}
 		Uptr<Instruction> convert_instruction_array_load(const ParseNode &n){
@@ -785,22 +783,6 @@ namespace IR::parser {
 				exit(-1);
 			}
 		}
-
-		Uptr<BasicBlock> convert_basic_block(const ParseNode& n){
-			assert(*n.rule == typeid(rules::BasicBlockRule));
-			BasicBlock::Builder b_builder;
-
-			b_builder.add_name(convert_name_rule(n[0][0]));
-			b_builder.add_terminator(convert_terminator(n[2]));
-			const ParseNode& inst_nodes = n[1];
-			assert(*inst_nodes.rule == typeid(rules::InstructionsRule));
-			for (const Uptr<ParseNode> &inst : inst_nodes.children) {
-				b_builder.add_instruction(convert_instruction((*inst)));
-			}
-
-			return mv(b_builder.get_result());
-		}
-
 		Uptr<IRFunction> convert_ir_function(const ParseNode& n) {
 			assert(*n.rule == typeid(rules::FunctionRule));
 			IRFunction::Builder f_builder;
@@ -826,7 +808,16 @@ namespace IR::parser {
 			const ParseNode &basic_blocks = n[3];
 			assert(*basic_blocks.rule == typeid(rules::BasicBlocksRule));
 			for (const Uptr<ParseNode> &bb : basic_blocks.children) {
-				f_builder.add_block(convert_basic_block(*bb));
+				assert(*(*bb).rule == typeid(rules::BasicBlockRule));
+				BasicBlock::Builder b_builder;
+				b_builder.add_name(convert_name_rule((*bb)[0][0]));
+				b_builder.add_terminator(convert_terminator((*bb)[2]));
+				const ParseNode& inst_nodes = (*bb)[1];
+				assert(*inst_nodes.rule == typeid(rules::InstructionsRule));
+				for (const Uptr<ParseNode> &inst : inst_nodes.children) {
+					b_builder.add_instruction(convert_instruction((*inst)), f_builder.get_scope());
+				}
+				f_builder.add_block(mv(b_builder.get_result()));
 			}
 			return f_builder.get_result();
 		}
@@ -842,7 +833,7 @@ namespace IR::parser {
 		}
 	}
 
-	void parse_input(char *fileName, Opt<std::string> parse_tree_output) {
+	Uptr<IR::program::Program> parse_input(char *fileName, Opt<std::string> parse_tree_output) {
 		using EntryPointRule = pegtl::must<rules::ProgramRule>;
 		if (pegtl::analyze<EntryPointRule>() != 0) {
 			std::cerr << "There are problems with the grammar" << std::endl;
@@ -861,11 +852,9 @@ namespace IR::parser {
 				output_fstream.close();
 			}
 		}
-		std::cout << "done with parsing" << std::endl;
 		Uptr<IR::program::Program> ptr = node_processor::convert_program((*root)[0]);
-		std::cout << "starting to_string" << std::endl;
-		std::cout << ptr->to_string() << std::endl;
+		// std::cout << ptr->to_string() << std::endl;
 
-		return;
+		return ptr;
 	}
 }

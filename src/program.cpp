@@ -225,16 +225,14 @@ namespace IR::program {
 		this->source->bind_to_scope(agg_scope);
 	}
 	std::string InstructionDeclaration::to_string() const {
-		std::string sol =  this->t.to_string() + " ";
-		ItemRef<Variable> *var_ref = this->var.get();
-		std::cout << var_ref->get_ref_name() << std::endl;
-		Variable *var = var_ref->get_referent().value();
-		std::cout << var->get_name() << std::endl;
+		std::string sol =  this->var->get_type().to_string() + " ";
 		sol += this->var->to_string();
 		return sol;
 	}
 	void InstructionDeclaration::bind_to_scope(AggregateScope &agg_scope){
-		this->var->bind_to_scope(agg_scope);
+	}
+	void InstructionDeclaration::resolver(AggregateScope &agg_scope) {
+		agg_scope.variable_scope.resolve_item(this->var->get_name(), this->var.get());
 	}
 	std::string InstructionStore::to_string() const {
 		return this->dest->to_string() + " <- " + this-> source->to_string();
@@ -250,6 +248,11 @@ namespace IR::program {
 	std::string TerminatorBranchOne::to_string() const {
 		return "br" + this->bb_ref->to_string();
 	}
+	Vec<Pair<BasicBlock *, double>> TerminatorBranchOne::get_successor() {
+		Vec<Pair<BasicBlock *, double>> sol;
+		sol.push_back(std::make_pair(this->bb_ref->get_referent().value(), 1.0));
+		return sol;
+	}
 	void TerminatorBranchTwo::bind_to_scope(AggregateScope &agg_scope) {
 		this->condition->bind_to_scope(agg_scope);
 		this->branchTrue->bind_to_scope(agg_scope);
@@ -261,14 +264,20 @@ namespace IR::program {
 		sol += " " + this->branchFalse->to_string()  + "\n";
 		return sol;
 	}
+	Vec<Pair<BasicBlock *, double>> TerminatorBranchTwo::get_successor() {
+		Vec<Pair<BasicBlock *, double>> sol;
+		sol.emplace_back(std::make_pair(this->branchTrue->get_referent().value(), 0.7));
+		sol.emplace_back(std::make_pair(this->branchFalse->get_referent().value(), 0.3));
+		return sol;
+	}
 	void TerminatorReturnVar::bind_to_scope(AggregateScope &agg_scope) {
 		this->ret_var->bind_to_scope(agg_scope);
 	}
 	std::string TerminatorReturnVar::to_string() const {
 		return "return" + this->ret_var->to_string();
 	} 
-	
-	Uptr<BasicBlock> BasicBlock::Builder::get_result() {	
+
+	Uptr<BasicBlock> BasicBlock::Builder::get_result() {
 		return Uptr<BasicBlock>(new BasicBlock(
 			mv(this->name),
 			mv(this->inst),
@@ -278,7 +287,8 @@ namespace IR::program {
 	void BasicBlock::Builder::add_name(std::string name){
 		this->name = mv(name);
 	}
-	void BasicBlock::Builder::add_instruction(Uptr<Instruction> &&inst) {
+	void BasicBlock::Builder::add_instruction(Uptr<Instruction> &&inst, AggregateScope &agg_scope) {
+		inst->resolver(agg_scope);
 		this->inst.push_back(mv(inst));
 	}
 	void BasicBlock::Builder::add_terminator(Uptr<Terminator> &&te) {
@@ -307,11 +317,8 @@ namespace IR::program {
 	}
 
 	Uptr<IRFunction> IRFunction::Builder::get_result() {
-		int bounded = 0;
-		for (std::string name : this->agg_scope.variable_scope.get_free_names()) {
-			Uptr<Variable> var = mkuptr<Variable>(name);
-			this->vars.emplace_back(mv(var));
-			bounded += this->agg_scope.variable_scope.resolve_item(mv(name), this->vars.back().get());
+		for (auto &bb: this->basic_blocks){
+			bb->set_successors(bb->get_terminator()->get_successor());
 		}
 		return Uptr<IRFunction>(new IRFunction(
 			mv(this->name),
@@ -334,7 +341,7 @@ namespace IR::program {
 		this->basic_blocks.push_back(mv(bb));
 	}
 	void IRFunction::Builder::add_parameter(Type type, std::string var_name){
-		Uptr<Variable> var_ptr = mkuptr<Variable>(var_name);
+		Uptr<Variable> var_ptr = mkuptr<Variable>(var_name, type);
 		this->agg_scope.variable_scope.resolve_item(mv(var_name), var_ptr.get());
 		this->parameter_vars.push_back(var_ptr.get());
 		this->vars.emplace_back(mv(var_ptr));

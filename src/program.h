@@ -169,11 +169,18 @@ namespace IR::program {
 
 	class Variable {
 		std::string name;
+		Type t;
+		Vec<int> dimensions;
+		
 		public:
 
-		Variable(std::string name) : name { mv(name) } {}
+		Variable(std::string name, Type t) : 
+			name { mv(name) }, t { mv(t) } 
+		{}
 		const std::string &get_name() const { return this->name; }
 		std::string to_string() const;
+		Type &get_type() {return this->t; }
+		Vec<int> &get_dimensions() { return this->dimensions; }
 	};
 	
 	class Instruction {
@@ -181,6 +188,7 @@ namespace IR::program {
 		
 		virtual std::string to_string() const = 0;
 		virtual void bind_to_scope(AggregateScope &agg_scope) = 0;
+		virtual void resolver(AggregateScope &agg_scope){}
 	};
 	class InstructionAssignment: public Instruction {
 		Opt<Uptr<ItemRef<Variable>>> maybe_dest;
@@ -197,16 +205,14 @@ namespace IR::program {
 
 	};
 	class InstructionDeclaration: public Instruction {
-		Type t;
-		Uptr<ItemRef<Variable>> var;
+		Uptr<Variable> var;
 
 		public:
-		InstructionDeclaration(Type t, Uptr<ItemRef<Variable>> var): 
-			t {mv(t)}, var {mv(var)} 
-		{}
+		InstructionDeclaration(Uptr<Variable> var): var {mv(var)} {}
 		virtual void bind_to_scope(AggregateScope &agg_scope) override;
-		virtual Opt<Variable *> get_referent() {return this->var->get_referent(); }
+		virtual Opt<Variable *> get_referent() {return this->var.get(); }
 		virtual std::string to_string() const override;
+		virtual void resolver(AggregateScope &agg_scope) override;
 	};
 	class InstructionStore: public Instruction {
 		Uptr<MemoryLocation> dest; 
@@ -226,6 +232,7 @@ namespace IR::program {
 		public:
 
 		virtual void bind_to_scope(AggregateScope &agg_scope) = 0;
+		virtual Vec<Pair<BasicBlock *, double>> get_successor() = 0;
 		virtual std::string to_string() const = 0;
 	};
 	class TerminatorBranchOne : public Terminator{
@@ -235,6 +242,7 @@ namespace IR::program {
 		TerminatorBranchOne(Uptr<ItemRef<BasicBlock>> &&bb_ref): bb_ref { mv(bb_ref) }{}
 		virtual void bind_to_scope(AggregateScope &agg_scope);
 		virtual std::string to_string() const;
+		virtual Vec<Pair<BasicBlock *, double>> get_successor();
 	};
 	class TerminatorBranchTwo : public Terminator{
 		Uptr<Expr> condition;
@@ -253,11 +261,13 @@ namespace IR::program {
 			branchFalse {mv(branchFalse)}
 		{}
 		virtual void bind_to_scope(AggregateScope &agg_scope);
+		virtual Vec<Pair<BasicBlock *, double>> get_successor();
 		virtual std::string to_string() const;
 	};
 	class TerminatorReturnVoid : public Terminator {
 		public:
 		virtual void bind_to_scope(AggregateScope &agg_scope){}
+		virtual Vec<Pair<BasicBlock *, double>> get_successor() { return {}; }
 		virtual std::string to_string() const {return "return\n"; }
 	};
 	class TerminatorReturnVar : public Terminator {
@@ -268,12 +278,14 @@ namespace IR::program {
 		TerminatorReturnVar(Uptr<ItemRef<Variable>> ret_var): ret_var {mv(ret_var)} {}
 		virtual void bind_to_scope(AggregateScope &agg_scope);
 		virtual std::string to_string() const;
+		virtual Vec<Pair<BasicBlock *, double>> get_successor() { return {};}
 	};
 
 	class BasicBlock {
 		std::string name;
 		Vec<Uptr<Instruction>> inst;
 		Uptr<Terminator> te;
+		Vec<Pair<BasicBlock *, double>> successors;
 
 		public:
 
@@ -284,12 +296,16 @@ namespace IR::program {
 		) :
 			name { mv(name) },
 			inst { mv(inst) },
-			te { mv(te) }
+			te { mv(te) },
+			successors {{}}
 		{}
 		std::string to_string() const;
 		const std::string &get_name() const { return this->name; }
+		Vec<Pair<BasicBlock *, double>> &get_successors() {return this->successors;}
 		Vec<Uptr<Instruction>> &get_inst() { return this->inst; }
 		Uptr<Terminator> &get_terminator() { return this->te; }
+		void set_successors(Vec<Pair<BasicBlock *, double>> succ) {this->successors = mv(succ); }
+		void set_name(std::string new_name) {this->name = mv(new_name); }
 		void bind_to_scope(AggregateScope &agg_scope);
 
 		class Builder {
@@ -299,10 +315,10 @@ namespace IR::program {
 
 			public:
 
-			Builder() {};
+			Builder(){}
 			Uptr<BasicBlock> get_result();
 			void add_name(std::string name);
-			void add_instruction(Uptr<Instruction> &&inst);
+			void add_instruction(Uptr<Instruction> &&inst, AggregateScope &agg_scope);
 			void add_terminator(Uptr<Terminator> &&te);
 		};
 	};
@@ -469,7 +485,7 @@ namespace IR::program {
 			agg_scope {mv(agg_scope)}
 		{}
 		virtual const std::string &get_name() const override { return this->name; }
-		Vec<Uptr<BasicBlock>> &get_blocks() { return this->blocks; }
+		const Vec<Uptr<BasicBlock>> &get_blocks() const { return this->blocks; }
 		const Vec<Variable *> &get_parameter_vars() const { return this->parameter_vars; }
 		AggregateScope &get_scope() { return this->agg_scope; }
 		virtual std::string to_string() const override;

@@ -10,6 +10,9 @@ COMPILER			:= bin/$(PL_CLASS)
 OPT_LEVEL			:=
 CC_CLASS			:= $(PL_CLASS)c
 
+run: all
+	./IRc my_tests/parse_test.IR
+	
 svg_tree: all
 	./bin/IR my_tests/parse_test.IR -p
 	dot -T svg -o parse_tree.svg parse_tree.dot
