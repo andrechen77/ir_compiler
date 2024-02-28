@@ -45,6 +45,7 @@ namespace IR::program {
 
 		virtual std::string to_string() const = 0;
 		virtual void bind_to_scope(AggregateScope &agg_scope) = 0;
+		virtual std::string to_l3_expr(std::string prefix) = 0;
 	};
 
 	template<typename Item>
@@ -60,6 +61,7 @@ namespace IR::program {
 		{}
 		virtual void bind_to_scope(AggregateScope &agg_scope) override;
 		virtual std::string to_string() const override;
+		virtual std::string to_l3_expr(std::string prefix) override;
 		Opt<Item *> get_referent() const {
 			if (this->referent_nullable) {
 				return this->referent_nullable;
@@ -87,6 +89,7 @@ namespace IR::program {
 		int64_t get_value() const { return this->value; }
 		virtual std::string to_string() const override {return std::to_string(this->value);};
 		virtual void bind_to_scope(AggregateScope &agg_scope) {return;}
+		virtual std::string to_l3_expr(std::string prefix) {return std::to_string(this->value); }
 	};
 
 	enum struct Operator {
@@ -103,7 +106,7 @@ namespace IR::program {
 		rshift
 	};
 	Operator str_to_op(std::string str);
-	std::string to_string(Operator op);
+	std::string op_to_string(Operator op);
 	Opt<Operator> flip_operator(Operator op);
 
 	class BinaryOperation : public Expr {
@@ -120,6 +123,7 @@ namespace IR::program {
 		{}
 		virtual void bind_to_scope(AggregateScope &agg_scope) override;
 		virtual std::string to_string() const override;
+		virtual std::string to_l3_expr(std::string prefix) override;
 	};
 	class FunctionCall : public Expr {
 		Uptr<Expr> callee;
@@ -132,8 +136,9 @@ namespace IR::program {
 		{}
 		virtual void bind_to_scope(AggregateScope &agg_scope) override;
 		virtual std::string to_string() const override;
+		virtual std::string to_l3_expr(std::string prefix) override;
 	};
-	class MemoryLocation : public Expr {
+	class MemoryLocation{
 		Uptr<ItemRef<Variable>> base;
 		Vec<Uptr<Expr>> dimensions;
 
@@ -143,19 +148,24 @@ namespace IR::program {
 			base {mv(base)}, 
 			dimensions {mv(dimensions)} 
 		{}
-		virtual void bind_to_scope(AggregateScope &agg_scope) override;
-		virtual std::string to_string() const override;
+		void bind_to_scope(AggregateScope &agg_scope);
+		std::string to_string() const;
+		std::string to_l3(std::string prefix);
+		Vec<Uptr<Expr>> &get_dimensions() {return this->dimensions; }
 	};
-	class ArrayDeclaration : public Expr {
+	class ArrayDeclaration {
 		Vec<Uptr<Expr>> args;
 
 		public:
 
 		ArrayDeclaration(Vec<Uptr<Expr>> args): args {mv(args)}{}
-		virtual void bind_to_scope(AggregateScope &agg_scope) override;
-		virtual std::string to_string() const override;
+		void bind_to_scope(AggregateScope &agg_scope);
+		std::string to_string() const;
+		std::string to_l3(std::string prefix);
+		Vec<Uptr<Expr>> &get_args(){return this->args;}
+
 	};
-	class Length : public Expr {
+	class Length {
 		Uptr<ItemRef<Variable>> var;
 		Opt<int64_t> dimension;
 
@@ -163,24 +173,29 @@ namespace IR::program {
 
 		Length(Uptr<ItemRef<Variable>> var): var{mv(var)}{}
 		Length(Uptr<ItemRef<Variable>> var, int64_t dimension): var{mv(var)}, dimension{dimension} {}
-		virtual void bind_to_scope(AggregateScope &agg_scope) override;
-		virtual std::string to_string() const override;
+		void bind_to_scope(AggregateScope &agg_scope);
+		ItemRef<Variable> &get_var() const {return *this->var; }
+		Opt<int64_t> get_dim() const {return this->dimension; }
+		std::string to_string() const;
+		std::string to_l3(std::string prefix);
 	};
 
 	class Variable {
 		std::string name;
 		Type t;
-		Vec<int> dimensions;
+		Vec<Uptr<Expr>> *args;
 		
 		public:
 
+		Variable(std::string name): name { mv(name)} {}
 		Variable(std::string name, Type t) : 
 			name { mv(name) }, t { mv(t) } 
 		{}
 		const std::string &get_name() const { return this->name; }
 		std::string to_string() const;
 		Type &get_type() {return this->t; }
-		Vec<int> &get_dimensions() { return this->dimensions; }
+		void set_args(Vec<Uptr<Expr>> &args) { this->args = &args; }
+		std::string to_l3() {return "%" + this->name; }
 	};
 	
 	class Instruction {
@@ -189,6 +204,7 @@ namespace IR::program {
 		virtual std::string to_string() const = 0;
 		virtual void bind_to_scope(AggregateScope &agg_scope) = 0;
 		virtual void resolver(AggregateScope &agg_scope){}
+		virtual std::string to_l3_inst(std::string prefix) = 0;
 	};
 	class InstructionAssignment: public Instruction {
 		Opt<Uptr<ItemRef<Variable>>> maybe_dest;
@@ -202,7 +218,7 @@ namespace IR::program {
 		{}
 		virtual void bind_to_scope(AggregateScope &agg_scope) override;
 		virtual std::string to_string() const override;
-
+		virtual std::string to_l3_inst(std::string prefix) override;
 	};
 	class InstructionDeclaration: public Instruction {
 		Uptr<Variable> var;
@@ -213,6 +229,7 @@ namespace IR::program {
 		virtual Opt<Variable *> get_referent() {return this->var.get(); }
 		virtual std::string to_string() const override;
 		virtual void resolver(AggregateScope &agg_scope) override;
+		virtual std::string to_l3_inst(std::string prefix) override;
 	};
 	class InstructionStore: public Instruction {
 		Uptr<MemoryLocation> dest; 
@@ -225,6 +242,46 @@ namespace IR::program {
 		{}
 		virtual void bind_to_scope(AggregateScope &agg_scope) override;
 		virtual std::string to_string() const override;
+		virtual std::string to_l3_inst(std::string prefix) override;
+	};
+	class InstructionLoad: public Instruction {
+		Uptr<ItemRef<Variable>> dest;
+		Uptr<MemoryLocation> source; 
+
+		public:
+
+		InstructionLoad(Uptr<ItemRef<Variable>> dest, Uptr<MemoryLocation> source): 
+			dest {mv(dest)}, source {mv(source)}
+		{}
+		virtual void bind_to_scope(AggregateScope &agg_scope) override;
+		virtual std::string to_string() const override;
+		virtual std::string to_l3_inst(std::string prefix) override;
+	};
+	class InstructionLength: public Instruction {
+		Uptr<ItemRef<Variable>> dest;
+		Uptr<Length> source; 
+
+		public:
+
+		InstructionLength(Uptr<ItemRef<Variable>> dest, Uptr<Length> source): 
+			dest {mv(dest)}, source {mv(source)}
+		{}
+		virtual void bind_to_scope(AggregateScope &agg_scope) override;
+		virtual std::string to_string() const override;
+		virtual std::string to_l3_inst(std::string prefix) override;
+	};
+	class InstructionInitializeArray: public Instruction {
+		Uptr<ItemRef<Variable>> dest;
+		Uptr<ArrayDeclaration> newArray;
+
+		public:
+
+		InstructionInitializeArray(Uptr<ItemRef<Variable>> dest, Uptr<ArrayDeclaration> newArray): 
+			dest {mv(dest)}, newArray {mv(newArray)}
+		{}
+		virtual void bind_to_scope(AggregateScope &agg_scope) override;
+		virtual std::string to_string() const override;
+		virtual std::string to_l3_inst(std::string prefix) override;
 	};
 
 	class Terminator {
@@ -234,6 +291,7 @@ namespace IR::program {
 		virtual void bind_to_scope(AggregateScope &agg_scope) = 0;
 		virtual Vec<Pair<BasicBlock *, double>> get_successor() = 0;
 		virtual std::string to_string() const = 0;
+		virtual std::string to_l3_terminator(std::string prefix) = 0;
 	};
 	class TerminatorBranchOne : public Terminator{
 		Uptr<ItemRef<BasicBlock>> bb_ref;
@@ -243,6 +301,7 @@ namespace IR::program {
 		virtual void bind_to_scope(AggregateScope &agg_scope);
 		virtual std::string to_string() const;
 		virtual Vec<Pair<BasicBlock *, double>> get_successor();
+		virtual std::string to_l3_terminator(std::string prefix) override;
 	};
 	class TerminatorBranchTwo : public Terminator{
 		Uptr<Expr> condition;
@@ -263,12 +322,14 @@ namespace IR::program {
 		virtual void bind_to_scope(AggregateScope &agg_scope);
 		virtual Vec<Pair<BasicBlock *, double>> get_successor();
 		virtual std::string to_string() const;
+		virtual std::string to_l3_terminator(std::string prefix) override;
 	};
 	class TerminatorReturnVoid : public Terminator {
 		public:
 		virtual void bind_to_scope(AggregateScope &agg_scope){}
 		virtual Vec<Pair<BasicBlock *, double>> get_successor() { return {}; }
 		virtual std::string to_string() const {return "return\n"; }
+		virtual std::string to_l3_terminator(std::string prefix) {return "\treturn\n";};
 	};
 	class TerminatorReturnVar : public Terminator {
 		Uptr<ItemRef<Variable>> ret_var;
@@ -278,6 +339,7 @@ namespace IR::program {
 		TerminatorReturnVar(Uptr<ItemRef<Variable>> ret_var): ret_var {mv(ret_var)} {}
 		virtual void bind_to_scope(AggregateScope &agg_scope);
 		virtual std::string to_string() const;
+		virtual std::string to_l3_terminator(std::string prefix) override;
 		virtual Vec<Pair<BasicBlock *, double>> get_successor() { return {};}
 	};
 
@@ -319,7 +381,7 @@ namespace IR::program {
 			Uptr<BasicBlock> get_result();
 			void add_name(std::string name);
 			void add_instruction(Uptr<Instruction> &&inst, AggregateScope &agg_scope);
-			void add_terminator(Uptr<Terminator> &&te);
+			void add_terminator(Uptr<Terminator> &&te, AggregateScope &agg_scope);
 		};
 	};
 

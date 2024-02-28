@@ -624,7 +624,7 @@ namespace IR::parser {
 		}
 		Uptr<Instruction> convert_instruction_array_load(const ParseNode &n){
 			assert(*n.rule == typeid(rules::InstructionArrayLoadRule));
-			return mkuptr<InstructionAssignment>(
+			return mkuptr<InstructionLoad>(
 				convert_variable_ref(n[0]),
 				mkuptr<MemoryLocation>(
 					convert_variable_ref(n[1]),
@@ -663,7 +663,7 @@ namespace IR::parser {
 		}
 		Uptr<Instruction> convert_instruction_length_array(const ParseNode &n) {
 			assert(*n.rule == typeid(rules::InstructionLengthArrayRule));
-			return mkuptr<InstructionAssignment>(
+			return mkuptr<InstructionLength>(
 				convert_variable_ref(n[0]),
 				mkuptr<Length>(
 					convert_variable_ref(n[1]),
@@ -673,7 +673,7 @@ namespace IR::parser {
 		}
 		Uptr<Instruction> convert_instruction_length_tuple(const ParseNode &n) {
 			assert(*n.rule == typeid(rules::InstructionLengthTupleRule));
-			return mkuptr<InstructionAssignment>(
+			return mkuptr<InstructionLength>(
 				convert_variable_ref(n[0]),
 				mkuptr<Length>(
 					convert_variable_ref(n[1])
@@ -700,7 +700,7 @@ namespace IR::parser {
 		}
 		Uptr<Instruction> convert_instruction_array_declaration(const ParseNode &n) {
 			assert(*n.rule == typeid(rules::InstructionArrayDeclarationRule));
-			return mkuptr<InstructionAssignment>(
+			return mkuptr<InstructionInitializeArray>(
 				convert_variable_ref(n[0]),
 				mkuptr<ArrayDeclaration>(
 					convert_args(n[1])
@@ -711,7 +711,7 @@ namespace IR::parser {
 			assert(*n.rule == typeid(rules::InstructionTupleDeclarationRule));
 			Vec<Uptr<Expr>> sol;
 			sol.push_back(mv(convert_expr(n[1])));
-			return mkuptr<InstructionAssignment>(
+			return mkuptr<InstructionInitializeArray>(
 				convert_variable_ref(n[0]),
 				mkuptr<ArrayDeclaration>(
 					mv(sol)
@@ -811,7 +811,7 @@ namespace IR::parser {
 				assert(*(*bb).rule == typeid(rules::BasicBlockRule));
 				BasicBlock::Builder b_builder;
 				b_builder.add_name(convert_name_rule((*bb)[0][0]));
-				b_builder.add_terminator(convert_terminator((*bb)[2]));
+				b_builder.add_terminator(convert_terminator((*bb)[2]), f_builder.get_scope());
 				const ParseNode& inst_nodes = (*bb)[1];
 				assert(*inst_nodes.rule == typeid(rules::InstructionsRule));
 				for (const Uptr<ParseNode> &inst : inst_nodes.children) {

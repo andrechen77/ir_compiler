@@ -5,7 +5,7 @@ namespace IR::code_gen {
     using namespace IR::program;
     using namespace IR::tracer;
 
-    void generate_ir_function_code(const IRFunction &ir_function, std::ostream &o) {
+    void generate_ir_function_code(IRFunction &ir_function, std::ostream &o) {
         // function header
         o << "define @" << ir_function.get_name() << "(";
         bool first = true;
@@ -21,12 +21,19 @@ namespace IR::code_gen {
         // print each block
         Vec<Trace> traces = trace_cfg(ir_function.get_blocks());
         for (Trace trace: traces) {
-            bool first;
             Terminator *last;
+            std::string last_prefix = "";
             for (BasicBlock *bb: trace.block_sequence) {
-
+                o << "\t" << ":" << bb->get_name() << "\n";
+                last_prefix = target_arch::new_variable_names(ir_function, *bb);
+                for (Uptr<Instruction> &inst : bb->get_inst()) {
+                    o << inst->to_l3_inst(last_prefix);
+                }
+                last = bb->get_terminator().get();
             }
+            o << last->to_l3_terminator(last_prefix);
         }
+        o << "}\n";
         // for (const Uptr<BasicBlock> &block : l3_function.get_blocks()) {
         //     if (block->get_name().size() > 0) {
         //         o << "\t\t:" << block->get_name() << "\n";

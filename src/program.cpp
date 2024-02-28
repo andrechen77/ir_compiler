@@ -2,6 +2,20 @@
 
 namespace IR::program {
 	using namespace std_alias;
+
+	std::string encode_expr(const std::string &encode_to, const std::string &target, std::string &prefix){
+		std::string sol = "\t" + encode_to + " <- " + target + " << 1\n";
+		sol += "\t" + encode_to + " <- " + encode_to + " + 1\n";
+		return sol;
+	}
+
+	std::string decode_expr(const std::string &decode_to, const std::string &target, std::string &prefix) {
+		return "\t" + decode_to + " <- " + target + " >> 1\n";
+	}
+	std::string make_new_var_name(std::string prefix, int counter) {
+		return "%" + prefix + std::to_string(counter);
+	}
+
 	std::pair<A_type, int64_t> str_to_a_type(const std::string& str) {
 		static const std::map<std::string, A_type> stringToTypeMap = {
 			{"int64", A_type::int64},
@@ -78,7 +92,7 @@ namespace IR::program {
 		};
 		return map.find(str)->second;
 	}
-	std::string to_string(Operator op) {
+	std::string op_to_string(Operator op) {
 		static const std::string map[] = {
 			"<", "<=", "=", ">=", ">", "+", "-", "*", "&", "<<", ">>"
 		};
@@ -114,6 +128,9 @@ namespace IR::program {
 	template<> void ItemRef<Variable>::bind_to_scope(AggregateScope &agg_scope){
 		agg_scope.variable_scope.add_ref(*this);
 	}
+	template<> std::string ItemRef<Variable>::to_l3_expr(std::string prefix) {
+		return "%" + this->get_ref_name();
+	}
 	template<> std::string ItemRef<BasicBlock>::to_string() const {
 		std::string result = ":" + this->get_ref_name();
 		if (!this->referent_nullable) {
@@ -123,6 +140,9 @@ namespace IR::program {
 	}
 	template<> void ItemRef<BasicBlock>::bind_to_scope(AggregateScope &agg_scope){
 		agg_scope.basic_block_scope.add_ref(*this);
+	}
+	template<>std::string ItemRef<BasicBlock>::to_l3_expr(std::string prefix) {
+		return ":" + this->get_ref_name();
 	}
 	template<> std::string ItemRef<IRFunction>::to_string() const {
 		std::string result = "@" + this->get_ref_name();
@@ -134,6 +154,9 @@ namespace IR::program {
 	template<> void ItemRef<IRFunction>::bind_to_scope(AggregateScope &agg_scope){
 		agg_scope.ir_function_scope.add_ref(*this);
 	}
+	template<> std::string ItemRef<IRFunction>::to_l3_expr(std::string prefix) {
+		return "@" + this->get_ref_name();
+	}
 	template<> std::string ItemRef<ExternalFunction>::to_string() const {
 		std::string result = this->get_ref_name();
 		if (!this->referent_nullable) {
@@ -144,6 +167,9 @@ namespace IR::program {
 	template<> void ItemRef<ExternalFunction>::bind_to_scope(AggregateScope &agg_scope){
 		agg_scope.external_function_scope.add_ref(*this);
 	}
+	template<> std::string ItemRef<ExternalFunction>::to_l3_expr(std::string prefix) {
+		return this->get_ref_name();
+	}
 
 	std::string Variable::to_string() const {
 		return "%" + this->get_name();
@@ -151,12 +177,18 @@ namespace IR::program {
 
 	std::string BinaryOperation::to_string() const {
 		return this->lhs->to_string()
-			+ " " + program::to_string(this->op)
+			+ " " + program::op_to_string(this->op)
 			+ " " + this->rhs->to_string();
 	}
 	void BinaryOperation::bind_to_scope(AggregateScope &agg_scope) {
 		this->lhs->bind_to_scope(agg_scope);
 		this->rhs->bind_to_scope(agg_scope);
+	}
+	std::string BinaryOperation::to_l3_expr(std::string prefix) {
+		std::string sol = this->lhs->to_l3_expr(prefix) + " ";
+		sol += op_to_string(this->op) + " ";
+		sol += this->rhs->to_l3_expr(prefix);
+		return sol;
 	}
 	std::string FunctionCall::to_string() const {
 		std::string result = "call " + this->callee->to_string() + "(";
@@ -172,6 +204,22 @@ namespace IR::program {
 			arg->bind_to_scope(agg_scope);
 		}
 	}
+	std::string FunctionCall::to_l3_expr(std::string prefix) {
+		std::string sol = "call ";
+		sol += this->callee->to_l3_expr(prefix) + "(";
+		bool first = true;
+		for (Uptr<Expr> &arg: this->arguments){
+			if (first){
+				first = false;
+				sol += arg->to_l3_expr(prefix);
+			} else {
+				sol += ", " + arg->to_l3_expr(prefix);
+			}
+		}
+		sol += ")";
+		return sol;
+	}
+	
 	std::string MemoryLocation::to_string() const {
 		std::string sol = "" + this->base->to_string();
 		for (const auto &expr : this->dimensions) {
@@ -184,6 +232,37 @@ namespace IR::program {
 		for (const auto &expr : this->dimensions) {
 			expr->bind_to_scope(agg_scope);
 		}
+	}
+	std::string MemoryLocation::to_l3(std::string prefix) {
+		int n = this->dimensions.size();
+		std::string base = this->base->to_l3_expr(prefix);
+		std::string sol = "";
+		int counter = 0;
+		for (int i = 0; i < n; i ++) {
+			std::string new_var = make_new_var_name(prefix, counter);
+			sol += "\t" + new_var + " <- " + std::to_string((i + 1) * 8) + " + " + base + "\n";
+			sol += "\t" +  new_var + " <- load " + new_var + "\n";
+			sol += decode_expr(new_var, new_var, prefix);
+			counter++;
+		}
+		std::string accum = make_new_var_name(prefix, counter);
+		sol += "\t" + accum + " <- 0" + "\n";
+		counter++;
+		for (int i = 0; i < n; i++) {
+			std::string curr_row = make_new_var_name(prefix, counter);
+			sol += "\t" + curr_row + " <- 1\n";
+			for (int j = i + 1; j < n; j++) {
+				std::string multiply = make_new_var_name(prefix, counter);
+				sol += "\t" + curr_row + " <- " + curr_row + " * " + multiply + "\n";
+			}
+			sol += "\t" + curr_row + " <- " + curr_row + " * " + this->dimensions[i]->to_l3_expr(prefix) + "\n";
+			sol += "\t" + accum + " <- " + accum + " + " + curr_row + "\n";  
+		}
+		sol += "\t" + accum + " <- " + accum + " + " + std::to_string(n) + "\n";
+		sol += "\t" + accum + " <- " + accum + " * 8\n";
+		sol += "\t" + accum + " <- " + accum + " + " + base + "\n"; 
+		sol += "\t%" + prefix + "sol <- " + accum + "\n";
+		return sol;
 	}
 	std::string ArrayDeclaration::to_string() const {
 		std::string sol = "new Array (";
@@ -224,6 +303,15 @@ namespace IR::program {
 		}
 		this->source->bind_to_scope(agg_scope);
 	}
+	std::string InstructionAssignment::to_l3_inst(std::string prefix) {
+		std::string sol = "\t";
+		if (this->maybe_dest.has_value()) {
+			sol += this->maybe_dest.value()->to_l3_expr(prefix);
+			sol += " <- ";
+		}
+		sol += this->source->to_l3_expr(prefix);
+		return sol + "\n";
+	}
 	std::string InstructionDeclaration::to_string() const {
 		std::string sol =  this->var->get_type().to_string() + " ";
 		sol += this->var->to_string();
@@ -234,12 +322,93 @@ namespace IR::program {
 	void InstructionDeclaration::resolver(AggregateScope &agg_scope) {
 		agg_scope.variable_scope.resolve_item(this->var->get_name(), this->var.get());
 	}
+	std::string InstructionDeclaration::to_l3_inst(std::string prefix) {
+		return "";
+	}
 	std::string InstructionStore::to_string() const {
-		return this->dest->to_string() + " <- " + this-> source->to_string();
+		return this->dest->to_string() + " <- " + this->source->to_string();
 	}
 	void InstructionStore::bind_to_scope(AggregateScope &agg_scope) {
 		this->dest->bind_to_scope(agg_scope);
 		this->source->bind_to_scope(agg_scope);
+	}
+	std::string InstructionStore::to_l3_inst(std::string prefix) {
+		std::string sol = "";
+		sol += this->dest->to_l3(prefix);
+		sol += "\tstore %" + prefix + "sol <- " + this->source->to_l3_expr(prefix) + "\n";
+		return sol;
+	}
+	std::string InstructionLoad::to_string() const {
+		return this->dest->to_string() + " <- " + this-> source->to_string();
+	}
+	void InstructionLoad::bind_to_scope(AggregateScope &agg_scope) {
+		this->dest->bind_to_scope(agg_scope);
+		this->source->bind_to_scope(agg_scope);
+	}
+	std::string InstructionLoad::to_l3_inst(std::string prefix) {
+		std::string sol = "";
+		sol += this->source->to_l3(prefix);
+		sol += "\t" + this->dest->to_l3_expr(prefix) + " <- load %" + prefix + "sol\n";
+		return sol;
+	}
+	std::string InstructionInitializeArray::to_string() const {
+		std::string sol = this->dest->to_string();
+		sol += " <- ";
+		sol += this->newArray->to_string();
+		return sol;
+	}
+	void InstructionInitializeArray::bind_to_scope(AggregateScope &agg_scope) {
+		this->dest->bind_to_scope(agg_scope);
+		this->dest->get_referent().value()->set_args(this->newArray->get_args());
+	}
+	std::string InstructionInitializeArray::to_l3_inst(std::string prefix) {
+		Vec<Uptr<Expr>> &args = this->newArray->get_args();
+		if(args.size() != this->dest->get_referent().value()->get_type().get_num_dimensions()){
+			std::cerr << "InstructionInitializeArray Error: size of input array different from size of type" << std::endl;
+			std::cerr << "args size = " << std::to_string(args.size()) << std::endl;
+			std::cerr << "referent size = " << this->dest->get_referent().value()->get_type().get_num_dimensions() <<std::endl;
+			exit(-1);
+		}
+		int counter = 1;
+		std::string base = "%" + prefix + std::to_string(0);
+		std::string sol = "\t" + base + " <- 1\n";
+		for(Uptr<Expr> &arg: args){
+			std::string new_var = "%" + prefix + std::to_string(counter);
+			sol += decode_expr(new_var, arg->to_l3_expr(prefix), prefix);
+			sol += "\t" + base + " <- " + base + " * " + new_var + "\n";
+			counter++;
+		}
+		sol += "\t" + base + " <- " + base + " + " + std::to_string(args.size()) + "\n";
+		sol += encode_expr(base, base, prefix);
+		sol += "\t" + this->dest->to_l3_expr(prefix) + " <- call allocate(" + base + ", 1)\n";
+		int index = 1;
+		for(Uptr<Expr> &arg: args){
+			std::string new_var = "%" + prefix + std::to_string(counter);
+			sol += "\t" + new_var + " <- " + this->dest->to_l3_expr(prefix) + " + " + std::to_string(index * 8) + "\n";
+			sol += "\tstore " + new_var + " <- " + arg->to_l3_expr(prefix) + "\n";
+			counter++;
+			index++;
+		}
+		return sol;
+	}
+	std::string InstructionLength::to_string() const {
+		return this->dest->to_string() + " <- " + this->source->to_string();
+	}
+	void InstructionLength::bind_to_scope(AggregateScope &agg_scope) {
+		this->dest->bind_to_scope(agg_scope);
+		this->source->bind_to_scope(agg_scope);
+	}
+	std::string InstructionLength::to_l3_inst(std::string prefix) {
+		int64_t dim = 0;
+		if (this->source->get_dim().has_value()) {
+			dim = this->source->get_dim().value();
+		}
+		dim += 1;
+		std::string new_var = "%" + prefix + "0";
+		std::string sol = "\t" + new_var + " <- " + std::to_string(dim) + " * 8\n";
+		sol += "\t" + new_var + " <- " + this->source->get_var().to_l3_expr(prefix) + " + " + new_var + "\n";
+		sol += "\t" + this->dest->to_l3_expr(prefix) + " <- load " + new_var + "\n";
+		return sol;
 	}
 
 	void TerminatorBranchOne::bind_to_scope(AggregateScope &agg_scope) {
@@ -253,13 +422,16 @@ namespace IR::program {
 		sol.push_back(std::make_pair(this->bb_ref->get_referent().value(), 1.0));
 		return sol;
 	}
+	std::string TerminatorBranchOne::to_l3_terminator(std::string prefix) {
+		return "br " + this->bb_ref->to_l3_expr(prefix) + "\n";
+	}
 	void TerminatorBranchTwo::bind_to_scope(AggregateScope &agg_scope) {
 		this->condition->bind_to_scope(agg_scope);
 		this->branchTrue->bind_to_scope(agg_scope);
 		this->branchFalse->bind_to_scope(agg_scope);
 	}
 	std::string TerminatorBranchTwo::to_string() const {
-		std::string sol = "br" + this->condition->to_string();
+		std::string sol = "br " + this->condition->to_string();
 		sol += " " + this->branchTrue->to_string();
 		sol += " " + this->branchFalse->to_string()  + "\n";
 		return sol;
@@ -270,12 +442,22 @@ namespace IR::program {
 		sol.emplace_back(std::make_pair(this->branchFalse->get_referent().value(), 0.3));
 		return sol;
 	}
+	std::string TerminatorBranchTwo::to_l3_terminator(std::string prefix) {
+		std::string sol = "\tbr " + this->condition->to_l3_expr(prefix);
+		sol += " " + this->branchTrue->to_l3_expr(prefix);
+		sol += " " + this->branchFalse->to_l3_expr(prefix) + "\n";
+		return sol;
+	}
 	void TerminatorReturnVar::bind_to_scope(AggregateScope &agg_scope) {
 		this->ret_var->bind_to_scope(agg_scope);
 	}
 	std::string TerminatorReturnVar::to_string() const {
 		return "return" + this->ret_var->to_string();
 	} 
+	std::string TerminatorReturnVar::to_l3_terminator(std::string prefix) {
+		return "\treturn " + this->ret_var->to_l3_expr(prefix) + "\n";
+	}
+	
 
 	Uptr<BasicBlock> BasicBlock::Builder::get_result() {
 		return Uptr<BasicBlock>(new BasicBlock(
@@ -289,9 +471,11 @@ namespace IR::program {
 	}
 	void BasicBlock::Builder::add_instruction(Uptr<Instruction> &&inst, AggregateScope &agg_scope) {
 		inst->resolver(agg_scope);
+		inst->bind_to_scope(agg_scope);
 		this->inst.push_back(mv(inst));
 	}
-	void BasicBlock::Builder::add_terminator(Uptr<Terminator> &&te) {
+	void BasicBlock::Builder::add_terminator(Uptr<Terminator> &&te, AggregateScope &agg_scope) {
+		te->bind_to_scope(agg_scope);
 		this->te = mv(te);
 	}
 	std::string BasicBlock::to_string() const {
