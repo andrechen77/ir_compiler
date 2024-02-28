@@ -1,6 +1,7 @@
 #pragma once
 #include "std_alias.h"
 #include "program.h"
+#include "tracer.h"
 #include <string>
 
 namespace IR::code_gen::target_arch {

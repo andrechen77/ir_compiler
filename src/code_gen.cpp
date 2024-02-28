@@ -21,7 +21,6 @@ namespace IR::code_gen {
         // print each block
         Vec<Trace> traces = trace_cfg(ir_function.get_blocks());
         for (Trace trace: traces) {
-            Terminator *last;
             std::string last_prefix = "";
             for (BasicBlock *bb: trace.block_sequence) {
                 o << "\t" << ":" << bb->get_name() << "\n";
@@ -29,9 +28,8 @@ namespace IR::code_gen {
                 for (Uptr<Instruction> &inst : bb->get_inst()) {
                     o << inst->to_l3_inst(last_prefix);
                 }
-                last = bb->get_terminator().get();
+                o << bb->get_terminator()->to_l3_terminator(last_prefix, trace, bb);
             }
-            o << last->to_l3_terminator(last_prefix);
         }
         o << "}\n";
         // for (const Uptr<BasicBlock> &block : l3_function.get_blocks()) {

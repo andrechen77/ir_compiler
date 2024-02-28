@@ -47,7 +47,9 @@ namespace IR::program {
 		virtual void bind_to_scope(AggregateScope &agg_scope) = 0;
 		virtual std::string to_l3_expr(std::string prefix) = 0;
 	};
-
+	struct Trace {
+	    Vec<BasicBlock *> block_sequence; 
+    };
 	template<typename Item>
 	class ItemRef : public Expr {
 		std::string free_name;
@@ -291,7 +293,7 @@ namespace IR::program {
 		virtual void bind_to_scope(AggregateScope &agg_scope) = 0;
 		virtual Vec<Pair<BasicBlock *, double>> get_successor() = 0;
 		virtual std::string to_string() const = 0;
-		virtual std::string to_l3_terminator(std::string prefix) = 0;
+		virtual std::string to_l3_terminator(std::string prefix, Trace &my_trace, BasicBlock *my_bb) = 0;
 	};
 	class TerminatorBranchOne : public Terminator{
 		Uptr<ItemRef<BasicBlock>> bb_ref;
@@ -301,7 +303,7 @@ namespace IR::program {
 		virtual void bind_to_scope(AggregateScope &agg_scope);
 		virtual std::string to_string() const;
 		virtual Vec<Pair<BasicBlock *, double>> get_successor();
-		virtual std::string to_l3_terminator(std::string prefix) override;
+		virtual std::string to_l3_terminator(std::string prefix, Trace &my_trace, BasicBlock *my_bb) override;
 	};
 	class TerminatorBranchTwo : public Terminator{
 		Uptr<Expr> condition;
@@ -322,24 +324,24 @@ namespace IR::program {
 		virtual void bind_to_scope(AggregateScope &agg_scope);
 		virtual Vec<Pair<BasicBlock *, double>> get_successor();
 		virtual std::string to_string() const;
-		virtual std::string to_l3_terminator(std::string prefix) override;
+		virtual std::string to_l3_terminator(std::string prefix, Trace &my_trace, BasicBlock *my_bb) override;
 	};
 	class TerminatorReturnVoid : public Terminator {
 		public:
 		virtual void bind_to_scope(AggregateScope &agg_scope){}
 		virtual Vec<Pair<BasicBlock *, double>> get_successor() { return {}; }
 		virtual std::string to_string() const {return "return\n"; }
-		virtual std::string to_l3_terminator(std::string prefix) {return "\treturn\n";};
+		virtual std::string to_l3_terminator(std::string prefix, Trace &my_trace, BasicBlock *my_bb) {return "\treturn\n";};
 	};
 	class TerminatorReturnVar : public Terminator {
-		Uptr<ItemRef<Variable>> ret_var;
+		Uptr<Expr> ret_expr;
 
 		public:
 
-		TerminatorReturnVar(Uptr<ItemRef<Variable>> ret_var): ret_var {mv(ret_var)} {}
+		TerminatorReturnVar(Uptr<Expr> ret_expr): ret_expr {mv(ret_expr)} {}
 		virtual void bind_to_scope(AggregateScope &agg_scope);
 		virtual std::string to_string() const;
-		virtual std::string to_l3_terminator(std::string prefix) override;
+		virtual std::string to_l3_terminator(std::string prefix, Trace &my_trace, BasicBlock *my_bb) override;
 		virtual Vec<Pair<BasicBlock *, double>> get_successor() { return {};}
 	};
 

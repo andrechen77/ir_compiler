@@ -12,8 +12,6 @@ namespace IR::tracer {
 	using namespace std_alias;
     using namespace IR::program;
 
-    struct Trace {
-	    Vec<BasicBlock *> block_sequence; // must be a valid control flow
-    };
+
     Vec<Trace> trace_cfg(const Vec<Uptr<BasicBlock>> &blocks);
 }

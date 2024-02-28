@@ -235,6 +235,13 @@ namespace IR::program {
 	}
 	std::string MemoryLocation::to_l3(std::string prefix) {
 		int n = this->dimensions.size();
+		if (this->base->get_referent().value()->get_type().get_a_type() == A_type::tuple) {
+			std::string dimension = this->dimensions[0]->to_l3_expr(prefix);
+			std::string sol = "\t%" + prefix + "sol <- 1 + " + dimension + "\n"; 
+			sol += "\t%" + prefix + "sol <- 8 * %" + prefix + "sol\n";
+			sol += "\t%" + prefix + "sol <- %" + prefix + "sol + " + this->base->to_l3_expr(prefix) + "\n";
+			return sol;
+		}
 		std::string base = this->base->to_l3_expr(prefix);
 		std::string sol = "";
 		int counter = 0;
@@ -250,15 +257,16 @@ namespace IR::program {
 		counter++;
 		for (int i = 0; i < n; i++) {
 			std::string curr_row = make_new_var_name(prefix, counter);
+			counter++;
 			sol += "\t" + curr_row + " <- 1\n";
 			for (int j = i + 1; j < n; j++) {
-				std::string multiply = make_new_var_name(prefix, counter);
+				std::string multiply = make_new_var_name(prefix, j);
 				sol += "\t" + curr_row + " <- " + curr_row + " * " + multiply + "\n";
 			}
 			sol += "\t" + curr_row + " <- " + curr_row + " * " + this->dimensions[i]->to_l3_expr(prefix) + "\n";
 			sol += "\t" + accum + " <- " + accum + " + " + curr_row + "\n";  
 		}
-		sol += "\t" + accum + " <- " + accum + " + " + std::to_string(n) + "\n";
+		sol += "\t" + accum + " <- " + accum + " + " + std::to_string(n + 1) + "\n";
 		sol += "\t" + accum + " <- " + accum + " * 8\n";
 		sol += "\t" + accum + " <- " + accum + " + " + base + "\n"; 
 		sol += "\t%" + prefix + "sol <- " + accum + "\n";
@@ -363,11 +371,11 @@ namespace IR::program {
 	}
 	std::string InstructionInitializeArray::to_l3_inst(std::string prefix) {
 		Vec<Uptr<Expr>> &args = this->newArray->get_args();
-		if(args.size() != this->dest->get_referent().value()->get_type().get_num_dimensions()){
-			std::cerr << "InstructionInitializeArray Error: size of input array different from size of type" << std::endl;
-			std::cerr << "args size = " << std::to_string(args.size()) << std::endl;
-			std::cerr << "referent size = " << this->dest->get_referent().value()->get_type().get_num_dimensions() <<std::endl;
-			exit(-1);
+		if (this->dest->get_referent().value()->get_type().get_a_type() == A_type::tuple) {
+			std::string sol = "";
+			Uptr<Expr> &arg = args[0];
+			sol += "\t" + this->dest->to_l3_expr(prefix) + " <- call allocate(" + arg->to_l3_expr(prefix) + ", 1)\n";
+			return sol;
 		}
 		int counter = 1;
 		std::string base = "%" + prefix + std::to_string(0);
@@ -402,6 +410,10 @@ namespace IR::program {
 		int64_t dim = 0;
 		if (this->source->get_dim().has_value()) {
 			dim = this->source->get_dim().value();
+		} else {
+			std::string sol = "\t" + this->dest->to_l3_expr(prefix) + " <- load " + this->source->get_var().to_l3_expr(prefix) + "\n";
+			sol += encode_expr(this->dest->to_l3_expr(prefix), this->dest->to_l3_expr(prefix), prefix);
+			return sol;
 		}
 		dim += 1;
 		std::string new_var = "%" + prefix + "0";
@@ -422,8 +434,23 @@ namespace IR::program {
 		sol.push_back(std::make_pair(this->bb_ref->get_referent().value(), 1.0));
 		return sol;
 	}
-	std::string TerminatorBranchOne::to_l3_terminator(std::string prefix) {
-		return "br " + this->bb_ref->to_l3_expr(prefix) + "\n";
+	std::string TerminatorBranchOne::to_l3_terminator(std::string prefix, Trace &my_trace, BasicBlock *my_bb) {
+		bool printMe = true;
+		bool isNext = false;
+		for (BasicBlock *bb: my_trace.block_sequence) {
+			if (isNext && this->bb_ref->get_referent().value() == bb){
+				printMe = false;
+			}
+			if (bb == my_bb) {
+				isNext = true;
+			} else {
+				isNext = false;
+			}
+		}
+		if (printMe) {
+			return "\tbr " + this->bb_ref->to_l3_expr(prefix) + "\n";
+		}
+		return "";
 	}
 	void TerminatorBranchTwo::bind_to_scope(AggregateScope &agg_scope) {
 		this->condition->bind_to_scope(agg_scope);
@@ -442,20 +469,47 @@ namespace IR::program {
 		sol.emplace_back(std::make_pair(this->branchFalse->get_referent().value(), 0.3));
 		return sol;
 	}
-	std::string TerminatorBranchTwo::to_l3_terminator(std::string prefix) {
-		std::string sol = "\tbr " + this->condition->to_l3_expr(prefix);
-		sol += " " + this->branchTrue->to_l3_expr(prefix);
-		sol += " " + this->branchFalse->to_l3_expr(prefix) + "\n";
-		return sol;
+	std::string TerminatorBranchTwo::to_l3_terminator(std::string prefix, Trace &my_trace, BasicBlock *my_bb) {
+		bool printTrue = true;
+		bool isNext = false;
+		bool printFalse = true;
+		for (BasicBlock *bb: my_trace.block_sequence) {
+			if (isNext && this->branchTrue->get_referent().value() == bb){
+				printTrue = false;
+			}
+			if (isNext && this->branchFalse->get_referent().value() == bb){
+				printFalse = false;
+			}
+			if (my_bb == bb) {
+				isNext = true;
+			} else {
+				isNext = false;
+			}
+		}
+		std::string sol = "";
+		if (printTrue && printFalse) {
+			sol += "\tbr " + this->condition->to_l3_expr(prefix) + " " + this->branchTrue->to_l3_expr(prefix) + "\n";
+			sol += "\tbr " + this->branchFalse->to_l3_expr(prefix) + "\n";
+			return sol;
+		}
+		if (printTrue) {
+			sol += "\tbr " + this->condition->to_l3_expr(prefix) + " " + this->branchTrue->to_l3_expr(prefix) + "\n";
+			return sol;
+		} else {
+			sol += "\t%" + prefix + "t <- " + this->condition->to_l3_expr(prefix) + "\n";
+			sol += "\t%" + prefix + "t <- %" + prefix + "t = 0\n"; 
+			sol += "\tbr %" + prefix + "t " + this->branchFalse->to_l3_expr(prefix) + "\n";
+			return sol;
+		}
 	}
 	void TerminatorReturnVar::bind_to_scope(AggregateScope &agg_scope) {
-		this->ret_var->bind_to_scope(agg_scope);
+		this->ret_expr->bind_to_scope(agg_scope);
 	}
 	std::string TerminatorReturnVar::to_string() const {
-		return "return" + this->ret_var->to_string();
+		return "return" + this->ret_expr->to_string();
 	} 
-	std::string TerminatorReturnVar::to_l3_terminator(std::string prefix) {
-		return "\treturn " + this->ret_var->to_l3_expr(prefix) + "\n";
+	std::string TerminatorReturnVar::to_l3_terminator(std::string prefix, Trace &my_trace, BasicBlock *my_bb) {
+		return "\treturn " + this->ret_expr->to_l3_expr(prefix) + "\n";
 	}
 	
 

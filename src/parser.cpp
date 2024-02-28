@@ -217,7 +217,7 @@ namespace IR::parser {
 			>
 		{};
 		struct ArrayAccess :
-			star<
+			plus<
 				interleaved<
 					SpacesRule,
 					one<'['>,
@@ -242,7 +242,7 @@ namespace IR::parser {
 				VariableRule,
 				ArrayAccess,
 				ArrowRule,
-				InexplicableTRule
+				InexplicableSRule
 			>
 		{};
 
@@ -766,7 +766,7 @@ namespace IR::parser {
 		}
 		Uptr<Terminator> convert_terminator_return_var(const ParseNode &n) {
 			assert(*n.rule == typeid(rules::TerminatorReturnVarRule));
-			return mkuptr<TerminatorReturnVar>(convert_variable_ref(n[0]));
+			return mkuptr<TerminatorReturnVar>(convert_expr(n[0]));
 		}
 		Uptr<Terminator> convert_terminator(const ParseNode &n){
 			const std::type_info &rule = *n[0].rule;
