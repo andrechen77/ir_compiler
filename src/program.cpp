@@ -497,6 +497,7 @@ namespace IR::program {
 			return sol;
 		} else {
 			sol += "\t%" + prefix + "t <- " + this->condition->to_l3_expr(prefix) + "\n";
+			sol += "\t%" + prefix + "t <- %" + prefix + "t = 1\n"; 
 			sol += "\t%" + prefix + "t <- %" + prefix + "t = 0\n"; 
 			sol += "\tbr %" + prefix + "t " + this->branchFalse->to_l3_expr(prefix) + "\n";
 			return sol;

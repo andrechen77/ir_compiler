@@ -65,7 +65,6 @@ int main(
 		argv[optind],
 		output_parse_tree ? std::make_optional("parse_tree.dot") : Opt<std::string>()
 	);
-	std::cout << p->to_string() << std::endl;
 	if (enable_code_generator) {
 		std::ofstream o;
 		o.open("prog.L3");
