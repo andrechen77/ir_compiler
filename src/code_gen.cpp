@@ -18,6 +18,11 @@ namespace IR::code_gen {
             }
         }
         o << ") {\n";
+
+        // print br :first_block
+        const Uptr<BasicBlock> &first_block = ir_function.get_blocks()[0];
+        o << "\tbr :" << first_block->get_name() << "\n";
+
         // print each block
         Vec<Trace> traces = trace_cfg(ir_function.get_blocks());
         for (Trace trace: traces) {
